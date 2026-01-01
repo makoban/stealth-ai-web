@@ -2,7 +2,7 @@
 import { addWhisperUsage } from './gemini';
 
 // OpenAI APIキー（環境変数またはローカルストレージから取得）
-export const OPENAI_API_KEY = '';
+export const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 
 // 音声データをWhisper APIに送信して文字起こし
 export async function transcribeAudio(
