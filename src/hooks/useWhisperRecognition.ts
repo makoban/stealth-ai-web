@@ -6,12 +6,47 @@ export type RecognitionState = 'idle' | 'starting' | 'listening' | 'processing' 
 export interface UseWhisperRecognitionOptions {
   apiKey?: string;
   intervalMs?: number; // 音声を送信する間隔（ミリ秒）
+  silenceThreshold?: number; // 無音と判定する閾値（0-1）
+}
+
+// Whisperの幻覚（hallucination）としてよく出るフレーズ
+const HALLUCINATION_PHRASES = [
+  'ご視聴ありがとうございました',
+  'ご視聴ありがとうございます',
+  'チャンネル登録',
+  'チャンネル登録お願いします',
+  'チャンネル登録よろしくお願いします',
+  '高評価',
+  'いいね',
+  'コメント',
+  'ご覧いただきありがとうございました',
+  'ご覧いただきありがとうございます',
+  'お疲れ様でした',
+  'ありがとうございました',
+  'Thank you for watching',
+  'Thanks for watching',
+  'Subscribe',
+  'Like and subscribe',
+  '字幕',
+  'subtitles',
+  'MochiMochi',
+  'Amara.org',
+];
+
+// 幻覚フレーズかどうかをチェック
+function isHallucination(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return HALLUCINATION_PHRASES.some(phrase => 
+    normalized.includes(phrase.toLowerCase()) ||
+    phrase.toLowerCase().includes(normalized)
+  );
 }
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
     apiKey = OPENAI_API_KEY,
-    intervalMs = 3000, // 3秒ごとに送信（短すぎると認識精度が下がる）
+    intervalMs = 4000, // 4秒ごとに送信
+    silenceThreshold = 0.05, // 5%以下は無音と判定
   } = options;
 
   const [transcript, setTranscript] = useState<string>('');
@@ -30,6 +65,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
   const apiKeyRef = useRef<string>(apiKey);
+  const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
+  const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
 
   // APIキーをrefで保持（再レンダリングを防ぐ）
   useEffect(() => {
@@ -39,8 +76,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   // サポート確認
   useEffect(() => {
     const supported = typeof navigator.mediaDevices !== 'undefined' && 
-      typeof navigator.mediaDevices.getUserMedia === 'function' && 
-      typeof window.MediaRecorder !== 'undefined';
+      typeof navigator.mediaDevices.getUserMedia === 'function';
     setIsSupported(supported);
     if (!supported) {
       setError('このブラウザは音声録音をサポートしていません。');
@@ -70,12 +106,30 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       return;
     }
 
+    // 最大音声レベルをチェック（無音の場合はスキップ）
+    const maxLevel = maxAudioLevelRef.current;
+    console.log('[Whisper] Max audio level in period:', maxLevel);
+    
+    if (maxLevel < silenceThreshold) {
+      console.log('[Whisper] Silence detected, skipping API call');
+      setProcessingStatus(`無音検出（レベル: ${(maxLevel * 100).toFixed(0)}%）`);
+      // データをクリアして次の期間へ
+      recorderRef.current.getIntermediateBlob();
+      maxAudioLevelRef.current = 0;
+      recentAudioLevelsRef.current = [];
+      return;
+    }
+
     const blob = recorderRef.current.getIntermediateBlob();
     console.log('[Whisper] Got blob:', blob?.size || 0, 'bytes');
     
-    // 最小サイズを100バイトに下げる
-    if (!blob || blob.size < 100) {
-      setProcessingStatus('音声データ収集中...');
+    // 最大レベルをリセット
+    maxAudioLevelRef.current = 0;
+    recentAudioLevelsRef.current = [];
+    
+    // 最小サイズチェック（WAVヘッダー44バイト + 最低限のデータ）
+    if (!blob || blob.size < 1000) {
+      setProcessingStatus('音声データ不足');
       return;
     }
 
@@ -93,12 +147,19 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       
       if (result.text && result.text.trim()) {
         const newText = result.text.trim();
-        // リアルタイム欄に追加
-        pendingTextRef.current = pendingTextRef.current 
-          ? pendingTextRef.current + ' ' + newText 
-          : newText;
-        setInterimTranscript(pendingTextRef.current);
-        setProcessingStatus('認識成功');
+        
+        // 幻覚フレーズをフィルタリング
+        if (isHallucination(newText)) {
+          console.log('[Whisper] Filtered hallucination:', newText);
+          setProcessingStatus('ノイズ除去（幻覚フィルタ）');
+        } else {
+          // リアルタイム欄に追加
+          pendingTextRef.current = pendingTextRef.current 
+            ? pendingTextRef.current + ' ' + newText 
+            : newText;
+          setInterimTranscript(pendingTextRef.current);
+          setProcessingStatus('認識成功: ' + newText.substring(0, 20) + '...');
+        }
       } else {
         setProcessingStatus('音声なし（無音）');
       }
@@ -113,13 +174,22 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     } finally {
       isProcessingRef.current = false;
     }
-  }, []);
+  }, [silenceThreshold]);
 
   // 一定時間ごとにリアルタイム欄から会話欄に移動
   const flushToTranscript = useCallback(() => {
-    if (pendingTextRef.current) {
-      console.log('[Whisper] Flushing to transcript:', pendingTextRef.current);
-      setTranscript((prev) => prev ? prev + '\n' + pendingTextRef.current : pendingTextRef.current);
+    if (pendingTextRef.current && pendingTextRef.current.trim()) {
+      const textToFlush = pendingTextRef.current.trim();
+      console.log('[Whisper] Flushing to transcript:', textToFlush);
+      
+      // 会話欄に追加
+      setTranscript((prev) => {
+        const newTranscript = prev ? prev + '\n' + textToFlush : textToFlush;
+        console.log('[Whisper] New transcript:', newTranscript);
+        return newTranscript;
+      });
+      
+      // リアルタイム欄をクリア
       pendingTextRef.current = '';
       setInterimTranscript('');
     }
@@ -141,6 +211,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setError(null);
     setState('starting');
     pendingTextRef.current = '';
+    maxAudioLevelRef.current = 0;
+    recentAudioLevelsRef.current = [];
     setProcessingStatus('開始中...');
 
     try {
@@ -149,6 +221,15 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       
       await recorder.start((level) => {
         setAudioLevel(level);
+        // 最大レベルを更新
+        if (level > maxAudioLevelRef.current) {
+          maxAudioLevelRef.current = level;
+        }
+        recentAudioLevelsRef.current.push(level);
+        // 最新100件のみ保持
+        if (recentAudioLevelsRef.current.length > 100) {
+          recentAudioLevelsRef.current.shift();
+        }
         // より低い閾値で音声検出
         setIsSpeechDetected(level > 0.02);
       });
@@ -157,15 +238,15 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('listening');
       setProcessingStatus('録音中');
 
-      // 定期的に音声を処理（1.5秒ごと）
+      // 定期的に音声を処理
       intervalRef.current = setInterval(() => {
         processAudio();
       }, intervalMs);
 
-      // 8秒ごとにリアルタイム欄から会話欄に移動
+      // 6秒ごとにリアルタイム欄から会話欄に移動
       flushIntervalRef.current = setInterval(() => {
         flushToTranscript();
-      }, 8000);
+      }, 6000);
 
     } catch (e) {
       console.error('[Whisper] Failed to start:', e);
@@ -193,14 +274,15 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     if (recorderRef.current) {
       const finalBlob = recorderRef.current.stop();
       
-      if (finalBlob && finalBlob.size > 100) {
+      // 無音でなく、十分なサイズがある場合のみ処理
+      if (finalBlob && finalBlob.size > 1000 && maxAudioLevelRef.current >= silenceThreshold) {
         setState('processing');
         setInterimTranscript('最終処理中...');
         setProcessingStatus('最終処理中...');
         
         try {
           const result = await transcribeAudio(finalBlob, apiKeyRef.current);
-          if (result.text && result.text.trim()) {
+          if (result.text && result.text.trim() && !isHallucination(result.text.trim())) {
             pendingTextRef.current = pendingTextRef.current 
               ? pendingTextRef.current + ' ' + result.text.trim() 
               : result.text.trim();
@@ -221,7 +303,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setIsSpeechDetected(false);
     setAudioLevel(0);
     setProcessingStatus('');
-  }, [flushToTranscript]);
+    maxAudioLevelRef.current = 0;
+    recentAudioLevelsRef.current = [];
+  }, [flushToTranscript, silenceThreshold]);
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
