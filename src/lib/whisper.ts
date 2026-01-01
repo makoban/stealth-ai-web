@@ -4,18 +4,41 @@ import { addWhisperUsage } from './gemini';
 // OpenAI APIキー（環境変数またはローカルストレージから取得）
 export const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 
-// MIMEタイプからファイル拡張子を取得
-function getFileExtension(mimeType: string): string {
-  if (mimeType.includes('mp4') || mimeType.includes('m4a')) {
-    return 'm4a';
-  } else if (mimeType.includes('webm')) {
-    return 'webm';
-  } else if (mimeType.includes('ogg')) {
-    return 'ogg';
-  } else if (mimeType.includes('wav')) {
-    return 'wav';
+// PCMデータをWAVファイルに変換
+function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+
+  // WAVヘッダーを書き込む
+  const writeString = (offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true); // Subchunk1Size
+  view.setUint16(20, 1, true); // AudioFormat (PCM)
+  view.setUint16(22, 1, true); // NumChannels (Mono)
+  view.setUint32(24, sampleRate, true); // SampleRate
+  view.setUint32(28, sampleRate * 2, true); // ByteRate
+  view.setUint16(32, 2, true); // BlockAlign
+  view.setUint16(34, 16, true); // BitsPerSample
+  writeString(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+
+  // PCMデータを書き込む（16bit）
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
   }
-  return 'webm';
+
+  return new Blob([buffer], { type: 'audio/wav' });
 }
 
 // 音声データをWhisper APIに送信して文字起こし
@@ -24,18 +47,13 @@ export async function transcribeAudio(
   apiKey: string,
   language: string = 'ja'
 ): Promise<{ text: string; duration: number }> {
-  // BlobのMIMEタイプから適切なファイル名を生成
-  const extension = getFileExtension(audioBlob.type);
-  const fileName = `audio.${extension}`;
-  
   console.log('[Whisper] Sending audio:', {
     type: audioBlob.type,
     size: audioBlob.size,
-    fileName,
   });
 
   const formData = new FormData();
-  formData.append('file', audioBlob, fileName);
+  formData.append('file', audioBlob, 'audio.wav');
   formData.append('model', 'whisper-1');
   formData.append('language', language);
   formData.append('response_format', 'verbose_json');
@@ -66,24 +84,26 @@ export async function transcribeAudio(
   };
 }
 
-// MediaRecorderで音声を録音するクラス
+// ScriptProcessorNodeを使った音声録音クラス（WAV出力）
 export class AudioRecorder {
-  private mediaRecorder: MediaRecorder | null = null;
-  private audioChunks: Blob[] = [];
   private stream: MediaStream | null = null;
   private audioContext: AudioContext | null = null;
   private gainNode: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
+  private scriptProcessor: ScriptProcessorNode | null = null;
   private onAudioLevelCallback: ((level: number) => void) | null = null;
   private animationFrameId: number | null = null;
-  private currentMimeType: string = '';
+  private audioData: Float32Array[] = [];
+  private isRecordingFlag: boolean = false;
+  private sampleRate: number = 16000; // Whisperに最適なサンプルレート
 
   // 音声増幅の倍率
-  private gainValue: number = 3.0;
+  private gainValue: number = 5.0;
 
   async start(onAudioLevel?: (level: number) => void): Promise<void> {
     this.onAudioLevelCallback = onAudioLevel || null;
-    this.audioChunks = [];
+    this.audioData = [];
+    this.isRecordingFlag = true;
 
     // マイクアクセスを取得（ノイズ除去OFF）
     this.stream = await navigator.mediaDevices.getUserMedia({
@@ -91,11 +111,19 @@ export class AudioRecorder {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
+        sampleRate: this.sampleRate,
       },
     });
 
-    // AudioContextで音声を増幅
-    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    // AudioContextを作成
+    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+      sampleRate: this.sampleRate,
+    });
+    
+    // 実際のサンプルレートを取得
+    this.sampleRate = this.audioContext.sampleRate;
+    console.log('[AudioRecorder] Sample rate:', this.sampleRate);
+
     const source = this.audioContext.createMediaStreamSource(this.stream);
 
     // ゲインノード（増幅）
@@ -107,56 +135,32 @@ export class AudioRecorder {
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.3;
 
-    // 増幅した音声を出力先に接続
-    const destination = this.audioContext.createMediaStreamDestination();
-    source.connect(this.gainNode);
-    this.gainNode.connect(this.analyser);
-    this.gainNode.connect(destination);
-
-    // サポートされているMIMEタイプを取得
-    this.currentMimeType = this.getSupportedMimeType();
-    console.log('[AudioRecorder] Using MIME type:', this.currentMimeType);
-
-    // 増幅された音声ストリームでMediaRecorderを作成
-    const recorderOptions: MediaRecorderOptions = {};
-    if (this.currentMimeType) {
-      recorderOptions.mimeType = this.currentMimeType;
-    }
+    // ScriptProcessorNodeで生のPCMデータを取得
+    const bufferSize = 4096;
+    this.scriptProcessor = this.audioContext.createScriptProcessor(bufferSize, 1, 1);
     
-    this.mediaRecorder = new MediaRecorder(destination.stream, recorderOptions);
-
-    this.mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        this.audioChunks.push(event.data);
-      }
+    this.scriptProcessor.onaudioprocess = (e) => {
+      if (!this.isRecordingFlag) return;
+      
+      const inputData = e.inputBuffer.getChannelData(0);
+      // データをコピーして保存
+      const copy = new Float32Array(inputData.length);
+      copy.set(inputData);
+      this.audioData.push(copy);
     };
 
-    this.mediaRecorder.start(500); // 0.5秒ごとにデータを取得（より頻繁に）
+    // 接続: source -> gain -> analyser -> scriptProcessor -> destination
+    source.connect(this.gainNode);
+    this.gainNode.connect(this.analyser);
+    this.gainNode.connect(this.scriptProcessor);
+    this.scriptProcessor.connect(this.audioContext.destination);
 
     // 音声レベルを監視
     if (this.onAudioLevelCallback) {
       this.startLevelMonitoring();
     }
-  }
 
-  private getSupportedMimeType(): string {
-    // iOSではaudio/mp4が優先
-    const mimeTypes = [
-      'audio/mp4',
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/ogg;codecs=opus',
-    ];
-    
-    for (const mimeType of mimeTypes) {
-      if (MediaRecorder.isTypeSupported(mimeType)) {
-        return mimeType;
-      }
-    }
-    
-    // どれもサポートされていない場合は空文字を返す（デフォルトを使用）
-    console.warn('[AudioRecorder] No preferred MIME type supported, using default');
-    return '';
+    console.log('[AudioRecorder] Started recording');
   }
 
   private startLevelMonitoring(): void {
@@ -179,13 +183,16 @@ export class AudioRecorder {
   }
 
   stop(): Blob | null {
+    this.isRecordingFlag = false;
+
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
 
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      this.mediaRecorder.stop();
+    if (this.scriptProcessor) {
+      this.scriptProcessor.disconnect();
+      this.scriptProcessor = null;
     }
 
     if (this.stream) {
@@ -202,22 +209,42 @@ export class AudioRecorder {
     this.analyser = null;
     this.onAudioLevelCallback = null;
 
-    if (this.audioChunks.length > 0) {
-      const mimeType = this.currentMimeType || 'audio/webm';
-      return new Blob(this.audioChunks, { type: mimeType });
+    // 録音データをWAVに変換
+    if (this.audioData.length > 0) {
+      const blob = this.createWavBlob();
+      this.audioData = [];
+      return blob;
     }
     return null;
   }
 
   // 現在までの録音データを取得（録音は継続）
   getIntermediateBlob(): Blob | null {
-    if (this.audioChunks.length > 0) {
-      const mimeType = this.currentMimeType || 'audio/webm';
-      const blob = new Blob(this.audioChunks, { type: mimeType });
-      this.audioChunks = []; // チャンクをクリア
+    if (this.audioData.length > 0) {
+      const blob = this.createWavBlob();
+      this.audioData = []; // データをクリア
       return blob;
     }
     return null;
+  }
+
+  private createWavBlob(): Blob {
+    // 全てのチャンクを結合
+    const totalLength = this.audioData.reduce((sum, chunk) => sum + chunk.length, 0);
+    const combined = new Float32Array(totalLength);
+    let offset = 0;
+    for (const chunk of this.audioData) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    console.log('[AudioRecorder] Creating WAV:', {
+      totalSamples: totalLength,
+      duration: totalLength / this.sampleRate,
+      sampleRate: this.sampleRate,
+    });
+
+    return encodeWAV(combined, this.sampleRate);
   }
 
   setGain(value: number): void {
@@ -228,10 +255,6 @@ export class AudioRecorder {
   }
 
   isRecording(): boolean {
-    return this.mediaRecorder?.state === 'recording';
-  }
-
-  getMimeType(): string {
-    return this.currentMimeType;
+    return this.isRecordingFlag;
   }
 }
