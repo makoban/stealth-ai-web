@@ -133,7 +133,11 @@ export default function App() {
 
   // 要約を更新
   const updateSummary = useCallback(async (conversation: string) => {
-    if (conversation.length < 50) return;
+    console.log('[App] updateSummary called, length:', conversation.length);
+    if (conversation.length < 50) {
+      console.log('[App] Skipping summary - text too short');
+      return;
+    }
 
     try {
       const result = await summarizeConversation(
@@ -160,7 +164,11 @@ export default function App() {
 
   // テキストを処理（修正、固有名詞検出）
   const processText = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+    console.log('[App] processText called:', text);
+    if (!text.trim()) {
+      console.log('[App] Skipping processText - empty text');
+      return;
+    }
 
     try {
       // 会話を修正
@@ -209,25 +217,36 @@ export default function App() {
 
   // transcript変更を監視
   useEffect(() => {
+    console.log('[App] transcript changed:', { 
+      transcript: transcript?.substring(0, 50), 
+      lastProcessed: lastProcessedTranscript.current?.substring(0, 50) 
+    });
+    
     if (!transcript) return;
 
     const newText = transcript.slice(lastProcessedTranscript.current.length).trim();
+    console.log('[App] newText:', newText);
 
     if (newText.length > 0) {
       lastProcessedTranscript.current = transcript;
 
       const segments = newText.split('\n').filter(s => s.trim().length > 0);
       const filteredSegments = segments.filter(segment => !shouldFilterText(segment));
+      console.log('[App] segments:', segments.length, 'filtered:', filteredSegments.length);
 
       if (filteredSegments.length > 0) {
         const filteredText = filteredSegments.join(' ');
+        console.log('[App] Processing text:', filteredText);
+        
         setFullConversation(prev => {
           const updated = prev + ' ' + filteredText;
+          console.log('[App] fullConversation length:', updated.length);
           updateSummary(updated.trim());
           return updated;
         });
 
         filteredSegments.forEach(segment => {
+          console.log('[App] Calling processText:', segment.trim());
           processText(segment.trim());
         });
       }

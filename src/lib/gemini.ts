@@ -128,6 +128,7 @@ export interface CorrectedConversation {
 
 // Gemini APIを呼び出す共通関数
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
+  console.log('[Gemini] callGemini called, apiKey:', apiKey ? apiKey.substring(0, 10) + '...' : 'MISSING');
   const inputTokens = estimateTokens(prompt);
   apiUsageStats.inputTokens += inputTokens;
   apiUsageStats.callCount++;
@@ -148,7 +149,9 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
   );
 
   if (!response.ok) {
-    throw new Error(`API error: ${response.status}`);
+    const errorText = await response.text();
+    console.error('[Gemini] API error:', response.status, errorText);
+    throw new Error(`API error: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -228,6 +231,7 @@ export async function summarizeConversation(
   previousSummary: string | null,
   apiKey: string
 ): Promise<ConversationSummary> {
+  console.log('[Gemini] summarizeConversation called, conversation length:', conversation.length);
   const prompt = previousSummary
     ? `前回の要約: "${previousSummary}"
 
