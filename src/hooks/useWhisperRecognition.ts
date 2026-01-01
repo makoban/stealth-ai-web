@@ -11,7 +11,7 @@ export interface UseWhisperRecognitionOptions {
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
     apiKey = OPENAI_API_KEY,
-    intervalMs = 2000, // 2秒ごとに送信
+    intervalMs = 3000, // 3秒ごとに送信（短すぎると認識精度が下がる）
   } = options;
 
   const [transcript, setTranscript] = useState<string>('');

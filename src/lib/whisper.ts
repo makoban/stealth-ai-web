@@ -95,7 +95,7 @@ export class AudioRecorder {
   private animationFrameId: number | null = null;
   private audioData: Float32Array[] = [];
   private isRecordingFlag: boolean = false;
-  private sampleRate: number = 16000; // Whisperに最適なサンプルレート
+  private sampleRate: number = 48000; // デバイスのデフォルトサンプルレート
 
   // 音声増幅の倍率
   private gainValue: number = 5.0;
@@ -105,20 +105,17 @@ export class AudioRecorder {
     this.audioData = [];
     this.isRecordingFlag = true;
 
-    // マイクアクセスを取得（ノイズ除去OFF）
+    // マイクアクセスを取得（ノイズ除去OFF、サンプルレートは指定しない）
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
-        sampleRate: this.sampleRate,
       },
     });
 
-    // AudioContextを作成
-    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-      sampleRate: this.sampleRate,
-    });
+    // AudioContextを作成（デバイスのデフォルトサンプルレートを使用）
+    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     
     // 実際のサンプルレートを取得
     this.sampleRate = this.audioContext.sampleRate;
@@ -149,7 +146,8 @@ export class AudioRecorder {
       this.audioData.push(copy);
     };
 
-    // 接続: source -> gain -> analyser -> scriptProcessor -> destination
+    // 接続: source -> gain -> analyser
+    //                    -> scriptProcessor -> destination
     source.connect(this.gainNode);
     this.gainNode.connect(this.analyser);
     this.gainNode.connect(this.scriptProcessor);
@@ -238,10 +236,12 @@ export class AudioRecorder {
       offset += chunk.length;
     }
 
+    const durationSec = totalLength / this.sampleRate;
     console.log('[AudioRecorder] Creating WAV:', {
       totalSamples: totalLength,
-      duration: totalLength / this.sampleRate,
+      duration: durationSec.toFixed(2) + 's',
       sampleRate: this.sampleRate,
+      estimatedSize: (44 + totalLength * 2) + ' bytes',
     });
 
     return encodeWAV(combined, this.sampleRate);
