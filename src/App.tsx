@@ -16,7 +16,7 @@ import {
 import { OPENAI_API_KEY } from './lib/whisper';
 import './App.css';
 
-const APP_VERSION = 'v1.18';
+const APP_VERSION = 'v1.19';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -99,9 +99,10 @@ export default function App() {
     clearTranscript,
     isSupported,
     error: speechError,
+    processingStatus,
   } = useWhisperRecognition({
     apiKey: openaiApiKey,
-    intervalMs: 2000,
+    intervalMs: 1500, // 1.5秒ごとに送信
   });
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
@@ -329,6 +330,11 @@ export default function App() {
           <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
             {interimTranscript || (isListening ? '音声を待機中...' : '録音を開始してください')}
           </div>
+          {isListening && processingStatus && (
+            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px', textAlign: 'center' }}>
+              {processingStatus}
+            </div>
+          )}
         </section>
 
         {/* 会話欄 */}

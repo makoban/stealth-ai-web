@@ -22,6 +22,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [isSpeechDetected, setIsSpeechDetected] = useState<boolean>(false);
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const [currentGain, setCurrentGain] = useState<number>(5.0);
+  const [processingStatus, setProcessingStatus] = useState<string>('');
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -51,25 +52,44 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setCurrentGain(value);
     if (recorderRef.current) {
       recorderRef.current.setGain(value);
-      console.log('[Whisper] Gain updated to:', value);
     }
   }, []);
 
   // 定期的に音声を送信して文字起こし
   const processAudio = useCallback(async () => {
-    if (!recorderRef.current || isProcessingRef.current) return;
-    if (!recorderRef.current.isRecording()) return;
+    if (!recorderRef.current) {
+      console.log('[Whisper] No recorder');
+      return;
+    }
+    if (isProcessingRef.current) {
+      console.log('[Whisper] Already processing');
+      return;
+    }
+    if (!recorderRef.current.isRecording()) {
+      console.log('[Whisper] Not recording');
+      return;
+    }
 
     const blob = recorderRef.current.getIntermediateBlob();
-    if (!blob || blob.size < 500) return;
+    console.log('[Whisper] Got blob:', blob?.size || 0, 'bytes');
+    
+    // 最小サイズを100バイトに下げる
+    if (!blob || blob.size < 100) {
+      setProcessingStatus('音声データ収集中...');
+      return;
+    }
 
     isProcessingRef.current = true;
+    setProcessingStatus('Whisper APIに送信中...');
     
     // 処理中は「...」を表示
-    setInterimTranscript(pendingTextRef.current + '...');
+    const currentPending = pendingTextRef.current;
+    setInterimTranscript(currentPending ? currentPending + ' 🎤...' : '🎤 認識中...');
 
     try {
+      console.log('[Whisper] Sending to API...');
       const result = await transcribeAudio(blob, apiKeyRef.current);
+      console.log('[Whisper] Result:', result);
       
       if (result.text && result.text.trim()) {
         const newText = result.text.trim();
@@ -78,9 +98,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           ? pendingTextRef.current + ' ' + newText 
           : newText;
         setInterimTranscript(pendingTextRef.current);
+        setProcessingStatus('認識成功');
+      } else {
+        setProcessingStatus('音声なし（無音）');
       }
     } catch (e) {
       console.error('[Whisper] Transcription error:', e);
+      setProcessingStatus('エラー: ' + (e instanceof Error ? e.message : '不明'));
       if (e instanceof Error && e.message.includes('401')) {
         setError('OpenAI APIキーが無効です。設定を確認してください。');
       } else if (e instanceof Error && e.message.includes('429')) {
@@ -94,6 +118,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   // 一定時間ごとにリアルタイム欄から会話欄に移動
   const flushToTranscript = useCallback(() => {
     if (pendingTextRef.current) {
+      console.log('[Whisper] Flushing to transcript:', pendingTextRef.current);
       setTranscript((prev) => prev ? prev + '\n' + pendingTextRef.current : pendingTextRef.current);
       pendingTextRef.current = '';
       setInterimTranscript('');
@@ -116,6 +141,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setError(null);
     setState('starting');
     pendingTextRef.current = '';
+    setProcessingStatus('開始中...');
 
     try {
       const recorder = new AudioRecorder();
@@ -129,26 +155,29 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
       recorderRef.current = recorder;
       setState('listening');
+      setProcessingStatus('録音中');
 
-      // 定期的に音声を処理
+      // 定期的に音声を処理（1.5秒ごと）
       intervalRef.current = setInterval(() => {
         processAudio();
       }, intervalMs);
 
-      // 10秒ごとにリアルタイム欄から会話欄に移動
+      // 8秒ごとにリアルタイム欄から会話欄に移動
       flushIntervalRef.current = setInterval(() => {
         flushToTranscript();
-      }, 10000);
+      }, 8000);
 
     } catch (e) {
       console.error('[Whisper] Failed to start:', e);
       setError('マイクの使用が許可されていません');
       setState('idle');
+      setProcessingStatus('');
     }
   }, [isSupported, currentGain, intervalMs, processAudio, flushToTranscript]);
 
   const stopListening = useCallback(async () => {
     setState('stopping');
+    setProcessingStatus('停止中...');
 
     // インターバルを停止
     if (intervalRef.current) {
@@ -164,9 +193,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     if (recorderRef.current) {
       const finalBlob = recorderRef.current.stop();
       
-      if (finalBlob && finalBlob.size > 500) {
+      if (finalBlob && finalBlob.size > 100) {
         setState('processing');
         setInterimTranscript('最終処理中...');
+        setProcessingStatus('最終処理中...');
         
         try {
           const result = await transcribeAudio(finalBlob, apiKeyRef.current);
@@ -190,6 +220,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setInterimTranscript('');
     setIsSpeechDetected(false);
     setAudioLevel(0);
+    setProcessingStatus('');
   }, [flushToTranscript]);
 
   const clearTranscript = useCallback(() => {
@@ -223,6 +254,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     isSupported,
     audioLevel,
     currentGain,
+    processingStatus,
     setGain,
     startListening,
     stopListening,
