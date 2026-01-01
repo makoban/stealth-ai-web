@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSpeechRecognition } from './hooks/useSpeechRecognition';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
 import {
   detectProperNouns,
@@ -17,7 +16,7 @@ import {
 import { OPENAI_API_KEY } from './lib/whisper';
 import './App.css';
 
-const APP_VERSION = 'v1.16';
+const APP_VERSION = 'v1.17';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -59,16 +58,20 @@ interface SummaryEntry {
 }
 
 type ExpandedSection = 'none' | 'conversation' | 'summary' | 'lookup';
-type RecognitionMode = 'web' | 'whisper';
 
 export default function App() {
-  // 認識モード（Web Speech API or Whisper）
-  const [recognitionMode, setRecognitionMode] = useState<RecognitionMode>('web');
+  // OpenAI APIキー（ローカルストレージから読み込み）
   const [openaiApiKey, setOpenaiApiKey] = useState<string>(() => {
-    // ローカルストレージから読み込み
     const saved = localStorage.getItem('openai_api_key');
     return saved || OPENAI_API_KEY || '';
   });
+  
+  // 音声増幅倍率（ローカルストレージから読み込み）
+  const [gainValue, setGainValue] = useState<number>(() => {
+    const saved = localStorage.getItem('audio_gain');
+    return saved ? parseFloat(saved) : 5.0;
+  });
+
   const [showSettings, setShowSettings] = useState(false);
 
   // APIキーが変更されたらローカルストレージに保存
@@ -78,34 +81,29 @@ export default function App() {
     }
   }, [openaiApiKey]);
 
-  // Web Speech API
-  const webSpeech = useSpeechRecognition();
+  // 増幅倍率が変更されたらローカルストレージに保存
+  useEffect(() => {
+    localStorage.setItem('audio_gain', gainValue.toString());
+  }, [gainValue]);
 
   // Whisper API
-  const whisperSpeech = useWhisperRecognition({
-    apiKey: openaiApiKey,
-    intervalMs: 3000,
-    gainValue: 3.0,
-  });
-
-  // 現在のモードに応じて使用する認識結果を選択
-  const currentRecognition = recognitionMode === 'whisper' ? whisperSpeech : webSpeech;
   const {
     transcript,
     interimTranscript,
     isListening,
     isSpeechDetected,
     audioLevel,
+    setGain,
     startListening,
     stopListening,
     clearTranscript,
     isSupported,
     error: speechError,
-  } = currentRecognition;
-
-  // Web Speech API固有のプロパティ
-  const connectionStatus = recognitionMode === 'web' ? (webSpeech as any).connectionStatus : 'connected';
-  const allCandidates = recognitionMode === 'web' ? (webSpeech as any).allCandidates || [] : [];
+  } = useWhisperRecognition({
+    apiKey: openaiApiKey,
+    intervalMs: 2000,
+    gainValue: gainValue,
+  });
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
@@ -128,6 +126,11 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // 増幅倍率の変更をフックに反映
+  useEffect(() => {
+    setGain(gainValue);
+  }, [gainValue, setGain]);
+
   // 要約を更新
   const updateSummary = useCallback(async (conversation: string) => {
     if (conversation.length < 50) return;
@@ -147,7 +150,6 @@ export default function App() {
             topics: result.topics,
             timestamp: new Date(),
           };
-          // 最新の要約のみ保持（または最大5件）
           return [newEntry, ...prev.slice(0, 4)];
         });
       }
@@ -263,17 +265,7 @@ export default function App() {
   // 接続状態の色
   const getConnectionColor = () => {
     if (!isListening) return '#999';
-    if (connectionStatus === 'connected') return isSpeechDetected ? '#32CD32' : '#FF6B6B';
-    if (connectionStatus === 'reconnecting') return '#FFA500';
-    return '#FF6B6B';
-  };
-
-  // モード切り替え
-  const handleModeChange = (mode: RecognitionMode) => {
-    if (isListening) {
-      stopListening();
-    }
-    setRecognitionMode(mode);
+    return isSpeechDetected ? '#32CD32' : '#FF6B6B';
   };
 
   if (!isSupported) {
@@ -296,7 +288,6 @@ export default function App() {
           <div
             className="connection-indicator"
             style={{ backgroundColor: getConnectionColor() }}
-            title={connectionStatus}
           />
         </div>
         <div className="header-right">
@@ -317,37 +308,28 @@ export default function App() {
         <section className="section realtime-section">
           <div className="realtime-header">
             <h2>🎙️ リアルタイム</h2>
-            <div className="mode-selector">
-              <button
-                className={`mode-btn ${recognitionMode === 'web' ? 'active' : ''}`}
-                onClick={() => handleModeChange('web')}
-                disabled={isListening}
-              >
-                Web
-              </button>
-              <button
-                className={`mode-btn ${recognitionMode === 'whisper' ? 'active' : ''}`}
-                onClick={() => handleModeChange('whisper')}
-                disabled={isListening}
-              >
-                Whisper
-              </button>
+            <div className="gain-control">
+              <span className="gain-label">増幅: {gainValue.toFixed(1)}x</span>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="0.5"
+                value={gainValue}
+                onChange={(e) => setGainValue(parseFloat(e.target.value))}
+                className="gain-slider"
+              />
             </div>
           </div>
           {isListening && (
             <div className="audio-level-container">
-              <div className="audio-level-bar" style={{ width: `${audioLevel * 100}%` }} />
+              <div className="audio-level-bar" style={{ width: `${Math.min(audioLevel * 100 * 2, 100)}%` }} />
               <span className="audio-level-text">{(audioLevel * 100).toFixed(0)}%</span>
             </div>
           )}
           <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
             {interimTranscript || (isListening ? '音声を待機中...' : '録音を開始してください')}
           </div>
-          {recognitionMode === 'web' && allCandidates.length > 0 && (
-            <div className="candidates-list">
-              <small>候補: {allCandidates.slice(0, 3).join(' | ')}</small>
-            </div>
-          )}
         </section>
 
         {/* 会話欄 */}
@@ -476,15 +458,26 @@ export default function App() {
             <h2>⚙️ 設定 & API使用量</h2>
             
             <div className="settings-section">
-              <h3>認識モード</h3>
+              <h3>音声増幅</h3>
               <p className="settings-description">
-                <strong>Web:</strong> 無料（ブラウザ内蔵）<br/>
-                <strong>Whisper:</strong> 高精度・高感度（$0.006/分）
+                マイクの感度を調整します。小さな声を拾いたい場合は値を上げてください。
               </p>
+              <div className="gain-setting">
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="0.5"
+                  value={gainValue}
+                  onChange={(e) => setGainValue(parseFloat(e.target.value))}
+                  className="gain-slider-large"
+                />
+                <span className="gain-value">{gainValue.toFixed(1)}x</span>
+              </div>
             </div>
 
             <div className="settings-section">
-              <h3>OpenAI APIキー（Whisper用）</h3>
+              <h3>OpenAI APIキー</h3>
               <input
                 type="password"
                 value={openaiApiKey}
@@ -522,7 +515,7 @@ export default function App() {
       {/* エラー表示 */}
       {speechError && (
         <div className="error-toast">
-          音声認識エラー: {speechError}
+          {speechError}
         </div>
       )}
     </div>
