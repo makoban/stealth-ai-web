@@ -16,7 +16,7 @@ import {
 import { OPENAI_API_KEY } from './lib/whisper';
 import './App.css';
 
-const APP_VERSION = 'v1.19';
+const APP_VERSION = 'v1.20';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
