@@ -16,7 +16,7 @@ import {
 import { OPENAI_API_KEY } from './lib/whisper';
 import './App.css';
 
-const APP_VERSION = 'v1.17';
+const APP_VERSION = 'v1.18';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -102,7 +102,6 @@ export default function App() {
   } = useWhisperRecognition({
     apiKey: openaiApiKey,
     intervalMs: 2000,
-    gainValue: gainValue,
   });
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');

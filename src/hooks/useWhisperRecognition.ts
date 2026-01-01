@@ -6,14 +6,12 @@ export type RecognitionState = 'idle' | 'starting' | 'listening' | 'processing' 
 export interface UseWhisperRecognitionOptions {
   apiKey?: string;
   intervalMs?: number; // 音声を送信する間隔（ミリ秒）
-  gainValue?: number; // 音声増幅倍率
 }
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
     apiKey = OPENAI_API_KEY,
-    intervalMs = 2000, // 2秒ごとに送信（より短く）
-    gainValue = 5.0, // デフォルト5倍増幅
+    intervalMs = 2000, // 2秒ごとに送信
   } = options;
 
   const [transcript, setTranscript] = useState<string>('');
@@ -23,12 +21,19 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [isSupported, setIsSupported] = useState<boolean>(false);
   const [isSpeechDetected, setIsSpeechDetected] = useState<boolean>(false);
   const [audioLevel, setAudioLevel] = useState<number>(0);
-  const [currentGain, setCurrentGain] = useState<number>(gainValue);
+  const [currentGain, setCurrentGain] = useState<number>(5.0);
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
+  const apiKeyRef = useRef<string>(apiKey);
+
+  // APIキーをrefで保持（再レンダリングを防ぐ）
+  useEffect(() => {
+    apiKeyRef.current = apiKey;
+  }, [apiKey]);
 
   // サポート確認
   useEffect(() => {
@@ -41,20 +46,22 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // ゲイン値の変更
+  // ゲイン値の変更（録音中でもリアルタイムに反映）
   const setGain = useCallback((value: number) => {
     setCurrentGain(value);
     if (recorderRef.current) {
       recorderRef.current.setGain(value);
+      console.log('[Whisper] Gain updated to:', value);
     }
   }, []);
 
   // 定期的に音声を送信して文字起こし
   const processAudio = useCallback(async () => {
     if (!recorderRef.current || isProcessingRef.current) return;
+    if (!recorderRef.current.isRecording()) return;
 
     const blob = recorderRef.current.getIntermediateBlob();
-    if (!blob || blob.size < 500) return; // より小さいデータも処理
+    if (!blob || blob.size < 500) return;
 
     isProcessingRef.current = true;
     
@@ -62,7 +69,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setInterimTranscript(pendingTextRef.current + '...');
 
     try {
-      const result = await transcribeAudio(blob, apiKey);
+      const result = await transcribeAudio(blob, apiKeyRef.current);
       
       if (result.text && result.text.trim()) {
         const newText = result.text.trim();
@@ -82,7 +89,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     } finally {
       isProcessingRef.current = false;
     }
-  }, [apiKey]);
+  }, []);
 
   // 一定時間ごとにリアルタイム欄から会話欄に移動
   const flushToTranscript = useCallback(() => {
@@ -100,7 +107,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
 
     // APIキーチェック
-    if (!apiKey || apiKey.includes('XXXX') || apiKey.length < 10) {
+    const key = apiKeyRef.current;
+    if (!key || key.includes('XXXX') || key.length < 10) {
       setError('OpenAI APIキーを設定してください');
       return;
     }
@@ -128,19 +136,16 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       }, intervalMs);
 
       // 10秒ごとにリアルタイム欄から会話欄に移動
-      const flushInterval = setInterval(() => {
+      flushIntervalRef.current = setInterval(() => {
         flushToTranscript();
       }, 10000);
-
-      // クリーンアップ用に保存
-      (intervalRef.current as any).flushInterval = flushInterval;
 
     } catch (e) {
       console.error('[Whisper] Failed to start:', e);
       setError('マイクの使用が許可されていません');
       setState('idle');
     }
-  }, [isSupported, apiKey, currentGain, intervalMs, processAudio, flushToTranscript]);
+  }, [isSupported, currentGain, intervalMs, processAudio, flushToTranscript]);
 
   const stopListening = useCallback(async () => {
     setState('stopping');
@@ -148,10 +153,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     // インターバルを停止
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
-      if ((intervalRef.current as any).flushInterval) {
-        clearInterval((intervalRef.current as any).flushInterval);
-      }
       intervalRef.current = null;
+    }
+    if (flushIntervalRef.current) {
+      clearInterval(flushIntervalRef.current);
+      flushIntervalRef.current = null;
     }
 
     // 最後の音声を処理
@@ -163,7 +169,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         setInterimTranscript('最終処理中...');
         
         try {
-          const result = await transcribeAudio(finalBlob, apiKey);
+          const result = await transcribeAudio(finalBlob, apiKeyRef.current);
           if (result.text && result.text.trim()) {
             pendingTextRef.current = pendingTextRef.current 
               ? pendingTextRef.current + ' ' + result.text.trim() 
@@ -184,7 +190,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setInterimTranscript('');
     setIsSpeechDetected(false);
     setAudioLevel(0);
-  }, [apiKey, flushToTranscript]);
+  }, [flushToTranscript]);
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
@@ -197,9 +203,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
-        if ((intervalRef.current as any).flushInterval) {
-          clearInterval((intervalRef.current as any).flushInterval);
-        }
+      }
+      if (flushIntervalRef.current) {
+        clearInterval(flushIntervalRef.current);
       }
       if (recorderRef.current) {
         recorderRef.current.stop();
