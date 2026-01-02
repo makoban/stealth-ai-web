@@ -10,36 +10,64 @@ export interface UseWhisperRecognitionOptions {
 }
 
 // Whisperの幻覚（hallucination）としてよく出るフレーズ
-const HALLUCINATION_PHRASES = [
+// 完全一致でフィルタリングするフレーズ
+const HALLUCINATION_EXACT = [
   'ご視聴ありがとうございました',
   'ご視聴ありがとうございます',
-  'チャンネル登録',
-  'チャンネル登録お願いします',
-  'チャンネル登録よろしくお願いします',
-  '高評価',
-  'いいね',
-  'コメント',
   'ご覧いただきありがとうございました',
   'ご覧いただきありがとうございます',
-  'お疲れ様でした',
+  '本日はご覧いただきありがとうございます',
+  '本日はご覧いただきありがとうございました',
   'ありがとうございました',
+  'お疲れ様でした',
+  'よい一日を',
+  '良い一日を',
   'Thank you for watching',
   'Thanks for watching',
   'Subscribe',
   'Like and subscribe',
-  '字幕',
-  'subtitles',
   'MochiMochi',
   'Amara.org',
 ];
 
+// 部分一致でフィルタリングするフレーズ
+const HALLUCINATION_PARTIAL = [
+  'チャンネル登録',
+  '高評価とチャンネル登録',
+  '字幕',
+  'subtitles',
+];
+
 // 幻覚フレーズかどうかをチェック
 function isHallucination(text: string): boolean {
-  const normalized = text.trim().toLowerCase();
-  return HALLUCINATION_PHRASES.some(phrase => 
-    normalized.includes(phrase.toLowerCase()) ||
-    phrase.toLowerCase().includes(normalized)
-  );
+  const normalized = text.trim();
+  const normalizedLower = normalized.toLowerCase();
+  
+  // 完全一致チェック
+  for (const phrase of HALLUCINATION_EXACT) {
+    if (normalized === phrase || normalizedLower === phrase.toLowerCase()) {
+      return true;
+    }
+  }
+  
+  // 部分一致チェック
+  for (const phrase of HALLUCINATION_PARTIAL) {
+    if (normalizedLower.includes(phrase.toLowerCase())) {
+      return true;
+    }
+  }
+  
+  // 短すぎるテキストはノイズの可能性が高い（3文字以下）
+  if (normalized.length <= 3) {
+    return true;
+  }
+  
+  // 「！」で終わる短いフレーズは幻覚の可能性が高い
+  if (normalized.endsWith('!') && normalized.length < 15) {
+    return true;
+  }
+  
+  return false;
 }
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {

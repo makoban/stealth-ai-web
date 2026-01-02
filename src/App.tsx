@@ -18,7 +18,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.34';
+const APP_VERSION = 'v1.35';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper' | 'assemblyai';
@@ -79,11 +79,8 @@ export default function App() {
     return (saved as SpeechEngine) || 'assemblyai'; // デフォルトはAssemblyAI
   });
 
-  // OpenAI APIキー（ローカルストレージから読み込み）
-  const [openaiApiKey, setOpenaiApiKey] = useState<string>(() => {
-    const saved = localStorage.getItem('openai_api_key');
-    return saved || OPENAI_API_KEY || '';
-  });
+  // OpenAI APIキー（環境変数から取得）
+  const openaiApiKey = OPENAI_API_KEY;
   
   // 音声増幅倍率（自動調整、初期値は最大）
   const [gainValue, setGainValue] = useState<number>(50);
@@ -95,12 +92,7 @@ export default function App() {
     localStorage.setItem('speech_engine', speechEngine);
   }, [speechEngine]);
 
-  // APIキーが変更されたらローカルストレージに保存
-  useEffect(() => {
-    if (openaiApiKey) {
-      localStorage.setItem('openai_api_key', openaiApiKey);
-    }
-  }, [openaiApiKey]);
+
 
   // Whisper API
   const whisper = useWhisperRecognition({
@@ -597,17 +589,6 @@ export default function App() {
                   ? '✅ 話者分離対応・最高精度・ノイズ耐性◎' 
                   : 'ℹ️ 標準品質・ノイズフィルターあり'}
               </p>
-            </div>
-
-            <div className="settings-section">
-              <h3>OpenAI APIキー（Whisper用）</h3>
-              <input
-                type="password"
-                value={openaiApiKey}
-                onChange={(e) => setOpenaiApiKey(e.target.value)}
-                placeholder="sk-proj-..."
-                className="api-key-input"
-              />
             </div>
 
             <div className="settings-section">

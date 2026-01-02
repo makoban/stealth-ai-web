@@ -1,4 +1,4 @@
-// AssemblyAI リアルタイム音声認識
+// AssemblyAI リアルタイム音声認識 (v3 API)
 
 // 話者情報付きの認識結果
 export interface SpeakerTranscript {
@@ -8,12 +8,13 @@ export interface SpeakerTranscript {
   timestamp: Date;
 }
 
-// AssemblyAI WebSocket接続クラス
+// AssemblyAI WebSocket接続クラス (v3 API対応)
 export class AssemblyAIRealtime {
   private socket: WebSocket | null = null;
   private audioContext: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private isConnected = false;
+  private processor: ScriptProcessorNode | null = null;
   
   // コールバック
   onTranscript: ((text: string, isFinal: boolean, speaker?: string) => void) | null = null;
@@ -41,42 +42,42 @@ export class AssemblyAIRealtime {
     try {
       // 一時トークンを取得
       const token = await this.getTemporaryToken();
+      console.log('[AssemblyAI] Token obtained, connecting to WebSocket...');
       
-      // WebSocket接続
-      const wsUrl = `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&token=${token}`;
+      // v3 WebSocket接続
+      // speech_model=universal-streaming-multilingual で日本語対応
+      const wsUrl = `wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&token=${token}&speech_model=universal-streaming-multilingual`;
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
         console.log('[AssemblyAI] WebSocket connected');
         this.isConnected = true;
-        
-        // 設定を送信
-        this.socket?.send(JSON.stringify({
-          // 話者分離を有効化
-          speaker_labels: true,
-          // 日本語
-          language_code: 'ja',
-        }));
       };
 
       this.socket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.message_type === 'FinalTranscript') {
-          // 確定した認識結果
-          if (data.text && this.onTranscript) {
-            this.onTranscript(data.text, true, data.speaker);
+        try {
+          const data = JSON.parse(event.data);
+          console.log('[AssemblyAI] Message received:', data.type);
+          
+          if (data.type === 'Begin') {
+            // セッション開始確認
+            console.log('[AssemblyAI] Session started:', data.id);
+          } else if (data.type === 'Turn') {
+            // ターンベースの認識結果
+            if (data.transcript && this.onTranscript) {
+              const isFinal = data.turn_is_formatted === true || data.end_of_turn === true;
+              this.onTranscript(data.transcript, isFinal, data.speaker);
+            }
+          } else if (data.type === 'Termination') {
+            console.log('[AssemblyAI] Session terminated:', data.reason);
+          } else if (data.error) {
+            console.error('[AssemblyAI] Error:', data.error);
+            if (this.onError) {
+              this.onError(data.error);
+            }
           }
-        } else if (data.message_type === 'PartialTranscript') {
-          // 途中の認識結果
-          if (data.text && this.onTranscript) {
-            this.onTranscript(data.text, false, data.speaker);
-          }
-        } else if (data.error) {
-          console.error('[AssemblyAI] Error:', data.error);
-          if (this.onError) {
-            this.onError(data.error);
-          }
+        } catch (e) {
+          console.error('[AssemblyAI] Failed to parse message:', e);
         }
       };
 
@@ -87,8 +88,8 @@ export class AssemblyAIRealtime {
         }
       };
 
-      this.socket.onclose = () => {
-        console.log('[AssemblyAI] WebSocket closed');
+      this.socket.onclose = (event) => {
+        console.log('[AssemblyAI] WebSocket closed:', event.code, event.reason);
         this.isConnected = false;
       };
 
@@ -141,11 +142,11 @@ export class AssemblyAIRealtime {
     checkLevel();
 
     // ScriptProcessorで音声データを送信
-    const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-    source.connect(processor);
-    processor.connect(this.audioContext.destination);
+    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+    source.connect(this.processor);
+    this.processor.connect(this.audioContext.destination);
 
-    processor.onaudioprocess = (event) => {
+    this.processor.onaudioprocess = (event) => {
       if (!this.isConnected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
         return;
       }
@@ -159,20 +160,9 @@ export class AssemblyAIRealtime {
         pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
       }
 
-      // Base64エンコードして送信
-      const base64 = this.arrayBufferToBase64(pcmData.buffer);
-      this.socket.send(JSON.stringify({ audio_data: base64 }));
+      // v3 APIではバイナリデータを直接送信
+      this.socket.send(pcmData.buffer);
     };
-  }
-
-  // ArrayBufferをBase64に変換
-  private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
   }
 
   // 切断
@@ -180,12 +170,17 @@ export class AssemblyAIRealtime {
     this.isConnected = false;
 
     if (this.socket) {
-      // 終了メッセージを送信
+      // v3 API: セッション終了メッセージを送信
       if (this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ terminate_session: true }));
+        this.socket.send(JSON.stringify({ type: 'Terminate' }));
       }
       this.socket.close();
       this.socket = null;
+    }
+
+    if (this.processor) {
+      this.processor.disconnect();
+      this.processor = null;
     }
 
     if (this.stream) {
