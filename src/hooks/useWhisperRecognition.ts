@@ -56,7 +56,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [isSupported, setIsSupported] = useState<boolean>(false);
   const [isSpeechDetected, setIsSpeechDetected] = useState<boolean>(false);
   const [audioLevel, setAudioLevel] = useState<number>(0);
-  const [currentGain, setCurrentGain] = useState<number>(5.0);
+  const [isClipping, setIsClipping] = useState<boolean>(false);
+  const [currentGain, setCurrentGain] = useState<number>(50); // 初期値は最大
   const [processingStatus, setProcessingStatus] = useState<string>('');
 
   const recorderRef = useRef<AudioRecorder | null>(null);
@@ -219,8 +220,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       const recorder = new AudioRecorder();
       recorder.setGain(currentGain);
       
-      await recorder.start((level) => {
+      await recorder.start((level, clipping) => {
         setAudioLevel(level);
+        setIsClipping(clipping);
         // 最大レベルを更新
         if (level > maxAudioLevelRef.current) {
           maxAudioLevelRef.current = level;
@@ -334,6 +336,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     state,
     isListening: state === 'listening' || state === 'processing',
     isSpeechDetected,
+    isClipping,
     error,
     isSupported,
     audioLevel,

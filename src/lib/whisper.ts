@@ -85,27 +85,38 @@ export async function transcribeAudio(
 }
 
 // ScriptProcessorNodeを使った音声録音クラス（WAV出力）
+// 高度な音声処理: ノイズ除去、音割れ防止、スマートAGC
 export class AudioRecorder {
   private stream: MediaStream | null = null;
   private audioContext: AudioContext | null = null;
   private gainNode: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
-  private onAudioLevelCallback: ((level: number) => void) | null = null;
+  private onAudioLevelCallback: ((level: number, isClipping: boolean) => void) | null = null;
   private animationFrameId: number | null = null;
   private audioData: Float32Array[] = [];
   private isRecordingFlag: boolean = false;
-  private sampleRate: number = 48000; // デバイスのデフォルトサンプルレート
+  private sampleRate: number = 48000;
 
-  // 音声増幅の倍率
-  private gainValue: number = 5.0;
+  // 高度な音声処理ノード
+  private highPassFilter: BiquadFilterNode | null = null;
+  private lowPassFilter: BiquadFilterNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
 
-  async start(onAudioLevel?: (level: number) => void): Promise<void> {
+  // 音声増幅の倍率（最大50x）
+  private gainValue: number = 50;
+
+  // 音割れ検出用
+  private clippingCount: number = 0;
+  private lastClipTime: number = 0;
+
+  async start(onAudioLevel?: (level: number, isClipping: boolean) => void): Promise<void> {
     this.onAudioLevelCallback = onAudioLevel || null;
     this.audioData = [];
     this.isRecordingFlag = true;
+    this.clippingCount = 0;
 
-    // マイクアクセスを取得（ノイズ除去OFF、サンプルレートは指定しない）
+    // マイクアクセスを取得（ブラウザのノイズ処理はOFF、独自処理を使用）
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: false,
@@ -114,18 +125,40 @@ export class AudioRecorder {
       },
     });
 
-    // AudioContextを作成（デバイスのデフォルトサンプルレートを使用）
+    // AudioContextを作成
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    
-    // 実際のサンプルレートを取得
     this.sampleRate = this.audioContext.sampleRate;
     console.log('[AudioRecorder] Sample rate:', this.sampleRate);
 
     const source = this.audioContext.createMediaStreamSource(this.stream);
 
-    // ゲインノード（増幅）
+    // === 高度な音声処理チェーン ===
+
+    // 1. ハイパスフィルター（低周波ノイズ除去: エアコン、車の音など）
+    // 人の声は約85Hz以上なので、80Hz以下をカット
+    this.highPassFilter = this.audioContext.createBiquadFilter();
+    this.highPassFilter.type = 'highpass';
+    this.highPassFilter.frequency.value = 80;
+    this.highPassFilter.Q.value = 0.7;
+
+    // 2. ローパスフィルター（高周波ノイズ除去: キーン音など）
+    // 人の声は約3400Hz以下なので、4000Hz以上をカット
+    this.lowPassFilter = this.audioContext.createBiquadFilter();
+    this.lowPassFilter.type = 'lowpass';
+    this.lowPassFilter.frequency.value = 4000;
+    this.lowPassFilter.Q.value = 0.7;
+
+    // 3. ゲインノード（増幅）
     this.gainNode = this.audioContext.createGain();
     this.gainNode.gain.value = this.gainValue;
+
+    // 4. ダイナミクスコンプレッサー（音割れ防止）
+    this.compressor = this.audioContext.createDynamicsCompressor();
+    this.compressor.threshold.value = -24;  // 圧縮開始レベル（dB）
+    this.compressor.knee.value = 30;        // 圧縮の滑らかさ
+    this.compressor.ratio.value = 12;       // 圧縮比率
+    this.compressor.attack.value = 0.003;   // 反応速度（秒）
+    this.compressor.release.value = 0.25;   // 解放速度（秒）
 
     // アナライザー（音声レベル監視用）
     this.analyser = this.audioContext.createAnalyser();
@@ -140,17 +173,33 @@ export class AudioRecorder {
       if (!this.isRecordingFlag) return;
       
       const inputData = e.inputBuffer.getChannelData(0);
+      
+      // 音割れ検出
+      let hasClipping = false;
+      for (let i = 0; i < inputData.length; i++) {
+        if (Math.abs(inputData[i]) > 0.99) {
+          hasClipping = true;
+          this.clippingCount++;
+          this.lastClipTime = Date.now();
+          break;
+        }
+      }
+
       // データをコピーして保存
       const copy = new Float32Array(inputData.length);
       copy.set(inputData);
       this.audioData.push(copy);
     };
 
-    // 接続: source -> gain -> analyser
-    //                    -> scriptProcessor -> destination
-    source.connect(this.gainNode);
-    this.gainNode.connect(this.analyser);
-    this.gainNode.connect(this.scriptProcessor);
+    // 接続チェーン:
+    // source -> highPass -> lowPass -> gain -> compressor -> analyser
+    //                                                     -> scriptProcessor -> destination
+    source.connect(this.highPassFilter);
+    this.highPassFilter.connect(this.lowPassFilter);
+    this.lowPassFilter.connect(this.gainNode);
+    this.gainNode.connect(this.compressor);
+    this.compressor.connect(this.analyser);
+    this.compressor.connect(this.scriptProcessor);
     this.scriptProcessor.connect(this.audioContext.destination);
 
     // 音声レベルを監視
@@ -158,7 +207,7 @@ export class AudioRecorder {
       this.startLevelMonitoring();
     }
 
-    console.log('[AudioRecorder] Started recording');
+    console.log('[AudioRecorder] Started with advanced audio processing (HP: 80Hz, LP: 4000Hz, Compressor, Gain:', this.gainValue + 'x)');
   }
 
   private startLevelMonitoring(): void {
@@ -172,7 +221,11 @@ export class AudioRecorder {
       this.analyser.getByteFrequencyData(dataArray);
       const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
       const normalizedLevel = Math.min(average / 128, 1);
-      this.onAudioLevelCallback(normalizedLevel);
+      
+      // 最近1秒以内に音割れがあったかどうか
+      const isClipping = (Date.now() - this.lastClipTime) < 1000;
+      
+      this.onAudioLevelCallback(normalizedLevel, isClipping);
 
       this.animationFrameId = requestAnimationFrame(updateLevel);
     };
@@ -205,11 +258,15 @@ export class AudioRecorder {
 
     this.gainNode = null;
     this.analyser = null;
+    this.highPassFilter = null;
+    this.lowPassFilter = null;
+    this.compressor = null;
     this.onAudioLevelCallback = null;
 
     // 録音データをWAVに変換
     if (this.audioData.length > 0) {
       const blob = this.createWavBlob();
+      console.log('[AudioRecorder] Stopped. Clipping events:', this.clippingCount);
       this.audioData = [];
       return blob;
     }
@@ -248,13 +305,22 @@ export class AudioRecorder {
   }
 
   setGain(value: number): void {
-    this.gainValue = value;
+    // 最大50xまで許可
+    this.gainValue = Math.min(Math.max(value, 1), 50);
     if (this.gainNode) {
-      this.gainNode.gain.value = value;
+      this.gainNode.gain.value = this.gainValue;
     }
+  }
+
+  getGain(): number {
+    return this.gainValue;
   }
 
   isRecording(): boolean {
     return this.isRecordingFlag;
+  }
+
+  getClippingCount(): number {
+    return this.clippingCount;
   }
 }
