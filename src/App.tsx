@@ -18,7 +18,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.35';
+const APP_VERSION = 'v1.36';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper' | 'assemblyai';

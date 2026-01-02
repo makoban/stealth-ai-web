@@ -19,15 +19,29 @@ const HALLUCINATION_EXACT = [
   '本日はご覧いただきありがとうございます',
   '本日はご覧いただきありがとうございました',
   'ありがとうございました',
+  'ありがとうございます',
   'お疲れ様でした',
   'よい一日を',
   '良い一日を',
+  'おやすみなさい',
+  'さようなら',
+  'またね',
+  'バイバイ',
+  '終わり',
+  'おしまい',
   'Thank you for watching',
   'Thanks for watching',
   'Subscribe',
   'Like and subscribe',
   'MochiMochi',
   'Amara.org',
+  'www.',
+  'http',
+  '.com',
+  '.jp',
+  '...',
+  '。。。',
+  '…',
 ];
 
 // 部分一致でフィルタリングするフレーズ
@@ -36,6 +50,21 @@ const HALLUCINATION_PARTIAL = [
   '高評価とチャンネル登録',
   '字幕',
   'subtitles',
+  'ご視聴',
+  '視聴',
+  'ご覧いただき',
+  'ご覧頂き',
+  'お聴き',
+  'お聞き',
+  '次回',
+  '次の動画',
+  'また会いましょう',
+  'お楽しみに',
+  '提供',
+  'スポンサー',
+  '広告',
+  'CM',
+  'コマーシャル',
 ];
 
 // 幻覚フレーズかどうかをチェック
@@ -46,6 +75,7 @@ function isHallucination(text: string): boolean {
   // 完全一致チェック
   for (const phrase of HALLUCINATION_EXACT) {
     if (normalized === phrase || normalizedLower === phrase.toLowerCase()) {
+      console.log('[Whisper] Hallucination detected (exact):', normalized);
       return true;
     }
   }
@@ -53,17 +83,32 @@ function isHallucination(text: string): boolean {
   // 部分一致チェック
   for (const phrase of HALLUCINATION_PARTIAL) {
     if (normalizedLower.includes(phrase.toLowerCase())) {
+      console.log('[Whisper] Hallucination detected (partial):', normalized, 'matched:', phrase);
       return true;
     }
   }
   
-  // 短すぎるテキストはノイズの可能性が高い（3文字以下）
-  if (normalized.length <= 3) {
+  // 短すぎるテキストはノイズの可能性が高い（4文字以下）
+  if (normalized.length <= 4) {
+    console.log('[Whisper] Hallucination detected (too short):', normalized);
     return true;
   }
   
   // 「！」で終わる短いフレーズは幻覚の可能性が高い
   if (normalized.endsWith('!') && normalized.length < 15) {
+    console.log('[Whisper] Hallucination detected (short exclamation):', normalized);
+    return true;
+  }
+  
+  // 同じ文字の繰り返し（例: "ああああ", "んんんん"）
+  if (/^(.)\1{3,}$/.test(normalized)) {
+    console.log('[Whisper] Hallucination detected (repeated char):', normalized);
+    return true;
+  }
+  
+  // 音楽記号や特殊文字のみ
+  if (/^[♪♫♬♭♮♯♩●○■□▲△★☆※→←↑↓　 ]+$/.test(normalized)) {
+    console.log('[Whisper] Hallucination detected (special chars only):', normalized);
     return true;
   }
   
