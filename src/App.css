@@ -818,6 +818,99 @@
   text-decoration: underline;
 }
 
+/* 候補・要確認バッジ */
+.candidate-badge {
+  font-size: 10px;
+  background: #FFA500;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+
+.verification-badge {
+  font-size: 10px;
+  background: #FF6B6B;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+
+.confidence-badge {
+  font-size: 10px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+/* 候補エントリのスタイル */
+.word-entry.candidate {
+  border-left-color: #FFA500;
+  background: #FFFAF0;
+}
+
+.word-entry.needs-verification {
+  border-left-color: #FF6B6B;
+}
+
+/* 他の候補表示 */
+.alternative-candidates {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.alternatives-header {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.alternative-item {
+  padding: 8px;
+  background: var(--surface);
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.alternative-item:last-child {
+  margin-bottom: 0;
+}
+
+.alt-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.alt-confidence {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+.alt-description {
+  font-size: 12px;
+  color: var(--text-primary);
+  margin: 4px 0 0 0;
+  line-height: 1.4;
+}
+
+.alt-url {
+  font-size: 11px;
+  color: var(--primary);
+  text-decoration: none;
+  margin-left: 8px;
+}
+
+.alt-url:hover {
+  text-decoration: underline;
+}
+
 /* エクセル出力ボタン */
 .control-btn.excel {
   background: linear-gradient(135deg, #217346 0%, #185C37 100%);

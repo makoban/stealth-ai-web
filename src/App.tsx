@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
 import { useAssemblyAI } from './hooks/useAssemblyAI';
 import {
-  detectProperNounsWithGenre,
-  explainProperNoun,
+  detectProperNounsExtended,
+  investigateProperNoun,
   summarizeConversation,
   correctConversationWithGenre,
   detectConversationGenre,
@@ -15,12 +15,14 @@ import {
   ConversationSummary,
   ConversationGenre,
   TotalApiUsageStats,
+  ExtendedProperNounResult,
+  ProperNoun,
 } from './lib/gemini';
 import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.40';
+const APP_VERSION = 'v1.41';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper' | 'assemblyai';
@@ -60,6 +62,15 @@ interface LookedUpWord {
   explanation: string;
   url?: string;
   timestamp: Date;
+  confidence: number;           // 確信度
+  isCandidate?: boolean;        // 候補かどうか
+  alternativeCandidates?: {     // 他の候補
+    name: string;
+    description: string;
+    confidence: number;
+    url?: string;
+  }[];
+  needsVerification?: boolean;  // 要確認フラグ
 }
 
 // 要約履歴の型
@@ -274,7 +285,7 @@ export default function App() {
     }
   }, [currentGenre, isDetectingGenre]);
 
-  // テキストを処理（修正、固有名詞検出）- ジャンルコンテキスト対応
+  // テキストを処理（修正、拡張固有名詞検出）- 候補を含む幅広い検出
   const processText = useCallback(async (text: string) => {
     console.log('[App] processText called:', text);
     if (!text.trim()) {
@@ -296,30 +307,63 @@ export default function App() {
 
       setConversations(prev => [...prev, entry]);
 
-      // 固有名詞を検出（知識レベルとジャンルに応じて）
-      const nouns = await detectProperNounsWithGenre(corrected.correctedText, knowledgeLevel, currentGenre, HARDCODED_API_KEY);
+      // 拡張固有名詞検出（候補を含む幅広い検出）
+      const result: ExtendedProperNounResult = await detectProperNounsExtended(
+        corrected.correctedText,
+        knowledgeLevel,
+        currentGenre,
+        fullConversation,
+        HARDCODED_API_KEY
+      );
 
-      for (const noun of nouns) {
+      // 全ての固有名詞を統合（確実 + 候補 + 人名 + 地名 + 組織名）
+      const allNouns: (ProperNoun & { source: string })[] = [
+        ...result.confirmed.map(n => ({ ...n, source: 'confirmed' })),
+        ...result.candidates.map(n => ({ ...n, source: 'candidate' })),
+        ...result.possibleNames.map(n => ({ ...n, source: 'name' })),
+        ...result.possiblePlaces.map(n => ({ ...n, source: 'place' })),
+        ...result.possibleOrgs.map(n => ({ ...n, source: 'org' })),
+      ];
+
+      console.log('[App] Detected nouns:', allNouns.length, 'confirmed:', result.confirmed.length, 'candidates:', result.candidates.length);
+
+      for (const noun of allNouns) {
         if (processedWordsRef.current.has(noun.word)) continue;
-        if (noun.confidence < 0.7) continue;
+        // 候補は確信度が低くても調査する（閾値を下げる）
+        const confidenceThreshold = noun.source === 'confirmed' ? 0.6 : 0.4;
+        if (noun.confidence < confidenceThreshold) continue;
 
         processedWordsRef.current.add(noun.word);
 
-        const explanations = await explainProperNoun(
+        // 詳細調査（複数候補を取得）
+        const candidates = await investigateProperNoun(
           noun.word,
           noun.category,
           fullConversation,
+          currentGenre,
           knowledgeLevel,
           HARDCODED_API_KEY
         );
 
-        if (explanations.length > 0) {
+        if (candidates.length > 0) {
+          const primary = candidates[0];
+          const alternatives = candidates.slice(1);
+
           setLookedUpWords(prev => [...prev, {
             word: noun.word,
             category: noun.category,
-            explanation: explanations[0].description,
-            url: explanations[0].url,
+            explanation: primary.description,
+            url: primary.url,
             timestamp: new Date(),
+            confidence: noun.confidence,
+            isCandidate: noun.source !== 'confirmed',
+            alternativeCandidates: alternatives.length > 0 ? alternatives.map(c => ({
+              name: c.name,
+              description: c.description,
+              confidence: c.confidence,
+              url: c.url,
+            })) : undefined,
+            needsVerification: noun.needsVerification || noun.source !== 'confirmed',
           }]);
         }
       }
@@ -542,10 +586,15 @@ export default function App() {
                 <p className="placeholder">固有名詞の説明がここに表示されます</p>
               ) : (
                 [...lookedUpWords].reverse().map((word, index) => (
-                  <div key={index} className="word-entry animate-fadeIn">
+                  <div key={index} className={`word-entry animate-fadeIn ${word.isCandidate ? 'candidate' : ''} ${word.needsVerification ? 'needs-verification' : ''}`}>
                     <div className="word-header">
                       <span className="word-name">{word.word}</span>
                       <span className="word-category">{word.category}</span>
+                      {word.isCandidate && <span className="candidate-badge">候補</span>}
+                      {word.needsVerification && <span className="verification-badge">要確認</span>}
+                      <span className="confidence-badge" style={{ opacity: word.confidence }}>
+                        {Math.round(word.confidence * 100)}%
+                      </span>
                     </div>
                     <p className="word-explanation">{word.explanation}</p>
                     {word.url && (
@@ -558,6 +607,30 @@ export default function App() {
                       >
                         🔗 参考リンク
                       </a>
+                    )}
+                    {/* 他の候補表示 */}
+                    {word.alternativeCandidates && word.alternativeCandidates.length > 0 && (
+                      <div className="alternative-candidates">
+                        <div className="alternatives-header">💡 他の可能性:</div>
+                        {word.alternativeCandidates.map((alt, altIndex) => (
+                          <div key={altIndex} className="alternative-item">
+                            <span className="alt-name">{alt.name}</span>
+                            <span className="alt-confidence">({Math.round(alt.confidence * 100)}%)</span>
+                            <p className="alt-description">{alt.description}</p>
+                            {alt.url && (
+                              <a
+                                href={alt.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="alt-url"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                🔗
+                              </a>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 ))

@@ -103,6 +103,8 @@ export interface ProperNoun {
   word: string;
   category: string;
   confidence: number;
+  possibleInterpretations?: string[];  // 複数の解釈候補
+  needsVerification?: boolean;         // 要確認フラグ
 }
 
 // 候補の型
@@ -111,6 +113,16 @@ export interface Candidate {
   description: string;
   confidence: number;
   url?: string;
+  alternativeNames?: string[];  // 別名・略称
+}
+
+// 拡張固有名詞検出結果の型
+export interface ExtendedProperNounResult {
+  confirmed: ProperNoun[];      // 確実な固有名詞
+  candidates: ProperNoun[];     // 候補（要確認）
+  possibleNames: ProperNoun[];  // 人名の可能性
+  possiblePlaces: ProperNoun[]; // 地名の可能性
+  possibleOrgs: ProperNoun[];   // 組織名の可能性
 }
 
 // 会話要約の型
@@ -483,5 +495,188 @@ JSON形式で回答してください:
     return { correctedText: text, uncertainWords: [], wasModified: false };
   } catch {
     return { correctedText: text, uncertainWords: [], wasModified: false };
+  }
+}
+
+
+// 拡張固有名詞検出 - 候補を含む幅広い検出
+export async function detectProperNounsExtended(
+  text: string,
+  knowledgeLevel: KnowledgeLevel,
+  genre: ConversationGenre | null,
+  conversationContext: string,
+  apiKey: string
+): Promise<ExtendedProperNounResult> {
+  const levelCriteria = {
+    elementary: '小学生が知らない可能性が高い',
+    middle: '中学生が知らない可能性がある',
+    high: '高校生が知らない可能性がある',
+    university: '大学生が知らない可能性がある',
+    expert: '専門家でも確認が必要な可能性がある',
+  };
+
+  const genreHints = genre && genre.confidence > 0.5
+    ? `
+会話のジャンル: ${genre.primary}${genre.secondary.length > 0 ? `（関連: ${genre.secondary.join('、')}）` : ''}
+このジャンルでよく出てくる固有名詞に注目してください。`
+    : '';
+
+  const prompt = `以下のテキストから、固有名詞とその候補を幅広く抽出してください。
+
+テキスト: "${text}"
+会話の文脈: "${conversationContext}"
+${genreHints}
+
+【重要な指示】
+1. **確実な固有名詞**: 明らかに固有名詞と判断できるもの
+2. **候補（要確認）**: 固有名詞かもしれないが確信が持てないもの
+3. **人名の可能性**: 人の名前かもしれない単語（姓、名、ニックネーム含む）
+4. **地名の可能性**: 場所の名前かもしれない単語（店名、施設名含む）
+5. **組織名の可能性**: 会社、団体、サービス名かもしれない単語
+
+【検出のポイント】
+- カタカナ語は特に注目（外来語、ブランド名の可能性）
+- 「〜さん」「〜くん」の前の単語は人名の可能性
+- 「〜に行く」「〜で食べる」の前の単語は地名・店名の可能性
+- 「〜で働いている」「〜の」の前の単語は組織名の可能性
+- 曖昧でも候補として挙げる（後で調査するため）
+- ${levelCriteria[knowledgeLevel]}単語を優先的に抽出
+
+【カテゴリ】
+人名、地名、店名、会社名、サービス名、製品名、作品名、専門用語、その他
+
+JSON形式で回答してください:
+{
+  "confirmed": [{"word": "確実な固有名詞", "category": "カテゴリ", "confidence": 0.9}],
+  "candidates": [{"word": "候補", "category": "カテゴリ", "confidence": 0.6, "possibleInterpretations": ["解釈1", "解釈2"], "needsVerification": true}],
+  "possibleNames": [{"word": "人名候補", "category": "人名", "confidence": 0.5, "possibleInterpretations": ["姓かも", "名かも"]}],
+  "possiblePlaces": [{"word": "地名候補", "category": "地名", "confidence": 0.5}],
+  "possibleOrgs": [{"word": "組織名候補", "category": "会社名", "confidence": 0.5}]
+}
+
+該当がない場合は空の配列を使用してください。`;
+
+  try {
+    const response = await callGemini(prompt, apiKey);
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const result = JSON.parse(jsonMatch[0]);
+      return {
+        confirmed: result.confirmed || [],
+        candidates: result.candidates || [],
+        possibleNames: result.possibleNames || [],
+        possiblePlaces: result.possiblePlaces || [],
+        possibleOrgs: result.possibleOrgs || [],
+      };
+    }
+    return { confirmed: [], candidates: [], possibleNames: [], possiblePlaces: [], possibleOrgs: [] };
+  } catch {
+    return { confirmed: [], candidates: [], possibleNames: [], possiblePlaces: [], possibleOrgs: [] };
+  }
+}
+
+// 固有名詞の詳細調査 - 複数の候補を返す
+export async function investigateProperNoun(
+  word: string,
+  category: string,
+  context: string,
+  genre: ConversationGenre | null,
+  knowledgeLevel: KnowledgeLevel,
+  apiKey: string
+): Promise<Candidate[]> {
+  const levelPrompt = {
+    elementary: '小学生でもわかるように、簡単な言葉で',
+    middle: '中学生向けに、基本的な用語を使って',
+    high: '高校生向けに、やや専門的な内容も含めて',
+    university: '大学生向けに、専門的な内容を含めて',
+    expert: '専門家向けに、詳細かつ正確に',
+  };
+
+  const genreHint = genre && genre.confidence > 0.5
+    ? `会話のジャンル「${genre.primary}」を考慮してください。`
+    : '';
+
+  const prompt = `「${word}」について調査してください。
+
+カテゴリ: ${category}
+文脈: "${context}"
+${genreHint}
+
+【重要な指示】
+1. この単語が何を指している可能性があるか、**複数の候補**を挙げてください
+2. 最も可能性が高いものから順に並べてください
+3. 同音異義語、略称、愛称なども考慮してください
+4. 各候補について${levelPrompt[knowledgeLevel]}説明してください
+
+【例】
+- 「田中」→ 田中角栄（政治家）、田中将大（野球選手）、一般的な姓
+- 「アップル」→ Apple Inc.（IT企業）、りんご、アップルパイ
+- 「渋谷」→ 渋谷区（東京都）、渋谷駅、渋谷という姓
+
+JSON形式で回答してください（最大5候補）:
+[
+  {"name": "正式名称1", "description": "説明（80文字以内）", "confidence": 0.9, "url": "参考URL", "alternativeNames": ["別名", "略称"]},
+  {"name": "正式名称2", "description": "説明（80文字以内）", "confidence": 0.7, "url": "参考URL"}
+]
+
+該当がない場合は空の配列[]を返してください。`;
+
+  try {
+    const response = await callGemini(prompt, apiKey);
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+// 会話全体から固有名詞を再検出（見逃し防止）
+export async function redetectMissedProperNouns(
+  fullConversation: string,
+  alreadyDetected: string[],
+  genre: ConversationGenre | null,
+  apiKey: string
+): Promise<ProperNoun[]> {
+  const alreadyDetectedStr = alreadyDetected.length > 0
+    ? `既に検出済み: ${alreadyDetected.join('、')}`
+    : '';
+
+  const genreHint = genre && genre.confidence > 0.5
+    ? `会話のジャンル: ${genre.primary}`
+    : '';
+
+  const prompt = `以下の会話全体を見直して、見逃している可能性のある固有名詞を探してください。
+
+会話: "${fullConversation}"
+${alreadyDetectedStr}
+${genreHint}
+
+【重要な指示】
+1. 既に検出済みの単語は除外してください
+2. 以下のパターンに注目してください：
+   - 「〜さん」「〜くん」「〜ちゃん」の前の単語（人名）
+   - 「〜に行った」「〜で」の前の単語（地名・店名）
+   - 「〜で働いている」「〜の社員」の前の単語（会社名）
+   - カタカナ語（ブランド名、サービス名の可能性）
+   - 漢字2〜4文字の連続（人名、地名の可能性）
+3. 曖昧でも候補として挙げてください
+
+JSON形式で回答してください:
+[{"word": "見逃していた固有名詞", "category": "カテゴリ", "confidence": 0.6, "needsVerification": true}]
+
+見逃しがない場合は空の配列[]を返してください。`;
+
+  try {
+    const response = await callGemini(prompt, apiKey);
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return [];
+  } catch {
+    return [];
   }
 }
