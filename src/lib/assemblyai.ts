@@ -16,6 +16,7 @@ export class AssemblyAIRealtime {
   private isConnected = false;
   private processor: ScriptProcessorNode | null = null;
   private audioDataSent = false;
+  private actualSampleRate = 48000; // 実際のサンプルレート
   
   // コールバック
   onTranscript: ((text: string, isFinal: boolean, speaker?: string) => void) | null = null;
@@ -39,6 +40,35 @@ export class AssemblyAIRealtime {
     const data = await response.json();
     console.log('[AssemblyAI] Token received:', data.token ? 'yes' : 'no');
     return data.token;
+  }
+
+  // リサンプリング関数 (任意のサンプルレートから16kHzへ)
+  private resample(inputData: Float32Array, inputSampleRate: number, outputSampleRate: number): Float32Array {
+    const ratio = inputSampleRate / outputSampleRate;
+    const outputLength = Math.floor(inputData.length / ratio);
+    const output = new Float32Array(outputLength);
+    
+    for (let i = 0; i < outputLength; i++) {
+      const srcIndex = i * ratio;
+      const srcIndexFloor = Math.floor(srcIndex);
+      const srcIndexCeil = Math.min(srcIndexFloor + 1, inputData.length - 1);
+      const t = srcIndex - srcIndexFloor;
+      
+      // 線形補間
+      output[i] = inputData[srcIndexFloor] * (1 - t) + inputData[srcIndexCeil] * t;
+    }
+    
+    return output;
+  }
+
+  // Float32 to Int16 PCM変換
+  private float32ToInt16(float32Array: Float32Array): Int16Array {
+    const int16Array = new Int16Array(float32Array.length);
+    for (let i = 0; i < float32Array.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return int16Array;
   }
 
   // 接続開始
@@ -137,10 +167,10 @@ export class AssemblyAIRealtime {
   private async startMicrophone(): Promise<void> {
     console.log('[AssemblyAI] Starting microphone...');
     
+    // マイクストリームを取得（サンプルレートは指定しない - デバイスのネイティブレートを使用）
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
-        sampleRate: 16000,
         echoCancellation: true,
         noiseSuppression: true,
       },
@@ -148,7 +178,11 @@ export class AssemblyAIRealtime {
 
     console.log('[AssemblyAI] Microphone stream obtained');
 
-    this.audioContext = new AudioContext({ sampleRate: 16000 });
+    // AudioContextを作成（サンプルレートは指定しない - デバイスのネイティブレートを使用）
+    this.audioContext = new AudioContext();
+    this.actualSampleRate = this.audioContext.sampleRate;
+    console.log('[AssemblyAI] Actual sample rate:', this.actualSampleRate);
+    
     const source = this.audioContext.createMediaStreamSource(this.stream);
     
     // 音声レベル監視
@@ -174,6 +208,7 @@ export class AssemblyAIRealtime {
     checkLevel();
 
     // ScriptProcessorで音声データを送信
+    // バッファサイズを大きくして安定性を向上
     this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
     source.connect(this.processor);
     this.processor.connect(this.audioContext.destination);
@@ -187,28 +222,27 @@ export class AssemblyAIRealtime {
 
       const inputData = event.inputBuffer.getChannelData(0);
       
-      // Float32 to Int16 PCM
-      const pcmData = new Int16Array(inputData.length);
-      for (let i = 0; i < inputData.length; i++) {
-        const s = Math.max(-1, Math.min(1, inputData[i]));
-        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
+      // 実際のサンプルレートから16kHzにリサンプリング
+      const resampledData = this.resample(inputData, this.actualSampleRate, 16000);
+      
+      // Float32 to Int16 PCM変換
+      const pcmData = this.float32ToInt16(resampledData);
 
-      // v3 APIではバイナリデータを直接送信
+      // バイナリデータとして送信
       this.socket.send(pcmData.buffer);
       
       audioChunkCount++;
       if (audioChunkCount % 50 === 0) {
-        console.log('[AssemblyAI] Audio chunks sent:', audioChunkCount);
+        console.log('[AssemblyAI] Audio chunks sent:', audioChunkCount, 'resampled from', this.actualSampleRate, 'to 16000');
       }
       
       if (!this.audioDataSent) {
         this.audioDataSent = true;
-        console.log('[AssemblyAI] First audio data sent');
+        console.log('[AssemblyAI] First audio data sent, original rate:', this.actualSampleRate, 'resampled to 16000');
       }
     };
     
-    console.log('[AssemblyAI] Audio processing started');
+    console.log('[AssemblyAI] Audio processing started with resampling');
   }
 
   // 切断
