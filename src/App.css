@@ -854,3 +854,72 @@
   align-items: center;
   gap: 4px;
 }
+
+
+/* エンジンバッジ */
+.engine-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.engine-badge:hover {
+  transform: scale(1.05);
+}
+
+/* エンジン選択ボタン */
+.engine-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.engine-btn {
+  flex: 1;
+  padding: 10px;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.engine-btn:hover:not(:disabled) {
+  border-color: #667eea;
+}
+
+.engine-btn.active {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.engine-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.engine-description {
+  font-size: 0.8rem;
+  color: #666;
+  margin: 0;
+  text-align: center;
+}
+
+/* 話者ラベル */
+.speaker-label {
+  display: inline-block;
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-right: 8px;
+}

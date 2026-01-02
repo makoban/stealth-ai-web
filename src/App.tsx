@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
+import { useAssemblyAI } from './hooks/useAssemblyAI';
 import {
   detectProperNouns,
   explainProperNoun,
@@ -17,7 +18,14 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.32';
+const APP_VERSION = 'v1.33';
+
+// 音声認識エンジンの種類
+type SpeechEngine = 'whisper' | 'assemblyai';
+const ENGINE_LABELS: Record<SpeechEngine, string> = {
+  whisper: 'Whisper',
+  assemblyai: 'AssemblyAI',
+};
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -65,6 +73,12 @@ interface SummaryEntry {
 type ExpandedSection = 'none' | 'conversation' | 'summary' | 'lookup';
 
 export default function App() {
+  // 音声認識エンジン選択
+  const [speechEngine, setSpeechEngine] = useState<SpeechEngine>(() => {
+    const saved = localStorage.getItem('speech_engine');
+    return (saved as SpeechEngine) || 'assemblyai'; // デフォルトはAssemblyAI
+  });
+
   // OpenAI APIキー（ローカルストレージから読み込み）
   const [openaiApiKey, setOpenaiApiKey] = useState<string>(() => {
     const saved = localStorage.getItem('openai_api_key');
@@ -76,6 +90,11 @@ export default function App() {
 
   const [showSettings, setShowSettings] = useState(false);
 
+  // エンジン選択をローカルストレージに保存
+  useEffect(() => {
+    localStorage.setItem('speech_engine', speechEngine);
+  }, [speechEngine]);
+
   // APIキーが変更されたらローカルストレージに保存
   useEffect(() => {
     if (openaiApiKey) {
@@ -84,23 +103,68 @@ export default function App() {
   }, [openaiApiKey]);
 
   // Whisper API
-  const {
-    transcript,
-    interimTranscript,
-    isListening,
-    isSpeechDetected,
-    isClipping,
-    audioLevel,
-    setGain,
-    startListening,
-    stopListening,
-    clearTranscript,
-    isSupported,
-    error: speechError,
-  } = useWhisperRecognition({
+  const whisper = useWhisperRecognition({
     apiKey: openaiApiKey,
-    intervalMs: 4000, // 4秒ごとに送信（認識精度向上のため）
+    intervalMs: 4000,
   });
+
+  // AssemblyAI用の状態
+  const [assemblyTranscript, setAssemblyTranscript] = useState('');
+  const [assemblyInterim, setAssemblyInterim] = useState('');
+  const [currentSpeaker, setCurrentSpeaker] = useState<string | undefined>();
+
+  // AssemblyAI
+  const assemblyAI = useAssemblyAI({
+    onTranscript: (text, isFinal, speaker) => {
+      if (isFinal) {
+        setAssemblyTranscript(prev => prev + (prev ? ' ' : '') + text);
+        setAssemblyInterim('');
+        setCurrentSpeaker(speaker);
+      } else {
+        setAssemblyInterim(text);
+      }
+    },
+  });
+
+  // 統合された音声認識状態
+  const transcript = speechEngine === 'whisper' ? whisper.transcript : assemblyTranscript;
+  const interimTranscript = speechEngine === 'whisper' ? whisper.interimTranscript : assemblyInterim;
+  const isListening = speechEngine === 'whisper' ? whisper.isListening : assemblyAI.isListening;
+  const audioLevel = speechEngine === 'whisper' ? whisper.audioLevel : assemblyAI.audioLevel / 100;
+  const isClipping = speechEngine === 'whisper' ? whisper.isClipping : false;
+  const isSpeechDetected = speechEngine === 'whisper' ? whisper.isSpeechDetected : assemblyAI.audioLevel > 10;
+  const isSupported = true;
+  const speechError = speechEngine === 'whisper' ? whisper.error : assemblyAI.error;
+
+  // 統合された操作関数
+  const startListening = useCallback(async () => {
+    if (speechEngine === 'whisper') {
+      whisper.startListening();
+    } else {
+      setAssemblyTranscript('');
+      setAssemblyInterim('');
+      await assemblyAI.startListening();
+    }
+  }, [speechEngine, whisper, assemblyAI]);
+
+  const stopListening = useCallback(() => {
+    if (speechEngine === 'whisper') {
+      whisper.stopListening();
+    } else {
+      assemblyAI.stopListening();
+    }
+  }, [speechEngine, whisper, assemblyAI]);
+
+  const clearTranscript = useCallback(() => {
+    if (speechEngine === 'whisper') {
+      whisper.clearTranscript();
+    } else {
+      setAssemblyTranscript('');
+      setAssemblyInterim('');
+    }
+  }, [speechEngine, whisper]);
+
+  const setGain = whisper.setGain;
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
@@ -334,6 +398,9 @@ export default function App() {
             <span>${apiUsage.totalCost.toFixed(4)}</span>
             <button onClick={(e) => { e.stopPropagation(); resetAllUsageStats(); setApiUsage(getTotalApiUsageStats()); }} className="reset-btn">↻</button>
           </div>
+          <span className="engine-badge" onClick={() => setShowSettings(true)}>
+            {speechEngine === 'assemblyai' ? '🏆' : '🐬'} {ENGINE_LABELS[speechEngine]}
+          </span>
           <button onClick={() => setShowLevelSelector(true)} className="level-btn">
             📚 {KNOWLEDGE_LEVEL_LABELS[knowledgeLevel]}
           </button>
@@ -350,6 +417,9 @@ export default function App() {
         {/* リアルタイム欄 */}
         <section className="section realtime-section">
           <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
+            {currentSpeaker && speechEngine === 'assemblyai' && (
+              <span className="speaker-label">話者{currentSpeaker}: </span>
+            )}
             {interimTranscript || (isListening ? '音声を待機中...' : '会話解析を開始してください')}
           </div>
         </section>
@@ -505,7 +575,32 @@ export default function App() {
             <h2>⚙️ 設定 & API使用量</h2>
             
             <div className="settings-section">
-              <h3>OpenAI APIキー</h3>
+              <h3>🎯 音声認識エンジン</h3>
+              <div className="engine-selector">
+                <button
+                  className={`engine-btn ${speechEngine === 'assemblyai' ? 'active' : ''}`}
+                  onClick={() => setSpeechEngine('assemblyai')}
+                  disabled={isListening}
+                >
+                  🏆 AssemblyAI（最高品質）
+                </button>
+                <button
+                  className={`engine-btn ${speechEngine === 'whisper' ? 'active' : ''}`}
+                  onClick={() => setSpeechEngine('whisper')}
+                  disabled={isListening}
+                >
+                  🐬 Whisper
+                </button>
+              </div>
+              <p className="engine-description">
+                {speechEngine === 'assemblyai' 
+                  ? '✅ 話者分離対応・最高精度・ノイズ耐性◎' 
+                  : 'ℹ️ 標準品質・ノイズフィルターあり'}
+              </p>
+            </div>
+
+            <div className="settings-section">
+              <h3>OpenAI APIキー（Whisper用）</h3>
               <input
                 type="password"
                 value={openaiApiKey}
