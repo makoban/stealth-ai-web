@@ -144,6 +144,15 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const whisperPromptRef = useRef<string>(whisperPrompt);
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
   const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
+  
+  // VAD（無音検出）用
+  const speechStartTimeRef = useRef<number | null>(null); // 発話開始時刻
+  const silenceStartTimeRef = useRef<number | null>(null); // 無音開始時刻
+  const vadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // VADタイムアウト
+  const VAD_SILENCE_DURATION = 800; // 無音と判定する時間（ミリ秒）
+  const VAD_MIN_SPEECH_DURATION = 500; // 最低発話時間（ミリ秒）
+  const VAD_MAX_SPEECH_DURATION = 10000; // 最大発話時間（ミリ秒）- これを超えたら強制送信
+  const VAD_SPEECH_THRESHOLD = 0.03; // 発話と判定する閾値
 
   // APIキーとプロンプトをrefで保持（再レンダリングを防ぐ）
   useEffect(() => {
@@ -314,16 +323,72 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           recentAudioLevelsRef.current.shift();
         }
         // より低い閾値で音声検出
-        setIsSpeechDetected(level > 0.02);
+        const isSpeaking = level > VAD_SPEECH_THRESHOLD;
+        setIsSpeechDetected(isSpeaking);
+        
+        // VADロジック
+        const now = Date.now();
+        
+        if (isSpeaking) {
+          // 発話中
+          if (speechStartTimeRef.current === null) {
+            speechStartTimeRef.current = now;
+            console.log('[VAD] Speech started');
+          }
+          silenceStartTimeRef.current = null;
+          
+          // VADタイムアウトをクリア
+          if (vadTimeoutRef.current) {
+            clearTimeout(vadTimeoutRef.current);
+            vadTimeoutRef.current = null;
+          }
+          
+          // 最大発話時間を超えたら強制送信
+          if (speechStartTimeRef.current && (now - speechStartTimeRef.current) > VAD_MAX_SPEECH_DURATION) {
+            console.log('[VAD] Max speech duration reached, forcing send');
+            processAudio();
+            speechStartTimeRef.current = now; // リセットして継続
+          }
+        } else {
+          // 無音
+          if (speechStartTimeRef.current !== null) {
+            // 発話後の無音
+            if (silenceStartTimeRef.current === null) {
+              silenceStartTimeRef.current = now;
+            }
+            
+            const silenceDuration = now - silenceStartTimeRef.current;
+            const speechDuration = now - speechStartTimeRef.current;
+            
+            // 無音が一定時間続いたら送信
+            if (silenceDuration >= VAD_SILENCE_DURATION && speechDuration >= VAD_MIN_SPEECH_DURATION) {
+              if (!vadTimeoutRef.current) {
+                vadTimeoutRef.current = setTimeout(() => {
+                  console.log('[VAD] Silence detected after speech, sending audio');
+                  processAudio();
+                  speechStartTimeRef.current = null;
+                  silenceStartTimeRef.current = null;
+                  vadTimeoutRef.current = null;
+                }, 100); // 少し待ってから送信
+              }
+            }
+          }
+        }
       });
 
       recorderRef.current = recorder;
       setState('listening');
       setProcessingStatus('解析中');
 
-      // 定期的に音声を処理
+      // バックアップ用の定期処理（VADが動作しない場合のフォールバック）
       intervalRef.current = setInterval(() => {
-        processAudio();
+        // VADが動作していない場合のみ定期送信
+        const now = Date.now();
+        if (speechStartTimeRef.current && (now - speechStartTimeRef.current) > intervalMs) {
+          console.log('[VAD] Backup interval triggered');
+          processAudio();
+          speechStartTimeRef.current = now;
+        }
       }, intervalMs);
 
       // 6秒ごとにリアルタイム欄から会話欄に移動
@@ -352,6 +417,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       clearInterval(flushIntervalRef.current);
       flushIntervalRef.current = null;
     }
+    // VADタイムアウトをクリア
+    if (vadTimeoutRef.current) {
+      clearTimeout(vadTimeoutRef.current);
+      vadTimeoutRef.current = null;
+    }
+    speechStartTimeRef.current = null;
+    silenceStartTimeRef.current = null;
 
     // 最後の音声を処理
     if (recorderRef.current) {
@@ -404,6 +476,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       }
       if (flushIntervalRef.current) {
         clearInterval(flushIntervalRef.current);
+      }
+      if (vadTimeoutRef.current) {
+        clearTimeout(vadTimeoutRef.current);
       }
       if (recorderRef.current) {
         recorderRef.current.stop();

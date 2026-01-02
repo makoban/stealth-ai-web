@@ -912,3 +912,49 @@ export function buildWhisperPrompt(
   console.log('[Whisper] Built prompt:', combined.slice(0, 100) + '...');
   return combined;
 }
+
+
+// TXTファイルの内容から関連する固有名詞・専門用語を生成（Whisperプロンプト用）
+// TXT読み込み時に1回だけ呼び出され、TXT変更まで維持される
+export async function generateKeywordsFromTeachFile(
+  teachContent: string,
+  apiKey: string
+): Promise<string> {
+  if (!teachContent || !teachContent.trim()) {
+    return '';
+  }
+
+  const prompt = `以下のテキストは、音声認識の精度向上のためにユーザーが事前に入力した情報です。
+このテキストに含まれる固有名詞と、それに関連しそうな固有名詞・専門用語を生成してください。
+
+【ユーザーが入力したテキスト】:
+${teachContent.slice(0, 500)}
+
+【生成ルール】
+1. テキストに直接含まれる固有名詞（人名、地名、組織名、製品名など）を抽出
+2. それらに関連しそうな固有名詞も追加（例: 「同志社大学」があれば「京都」「今出川」「関西私大」なども）
+3. 音声認識で間違いやすい単語を優先（例: 同志社→どうしても、慶應→けいおう）
+4. 合計40〜60個程度の単語をカンマ区切りで出力
+5. 説明は不要、単語のみ
+
+【出力例】
+同志社大学、同志社、京都、今出川、関西学院大学、立命館大学、関西大学、関関同立、教授、准教授、ゼミ、単位、履修、卒論、修論、田中、鈴木、佐藤
+
+固有名詞リスト:`;
+
+  try {
+    const response = await callGemini(prompt, apiKey);
+    // 改行やスペースを整理してカンマ区切りのリストにする
+    const cleanedResponse = response
+      .replace(/\n/g, '、')
+      .replace(/、+/g, '、')
+      .replace(/^、|、$/g, '')
+      .trim();
+    
+    console.log('[Gemini] Generated keywords from teach file:', cleanedResponse.slice(0, 150) + '...');
+    return cleanedResponse;
+  } catch (error) {
+    console.error('[Gemini] Failed to generate keywords from teach file:', error);
+    return '';
+  }
+}

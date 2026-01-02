@@ -8,6 +8,7 @@ import {
   correctConversationWithGenre,
   detectConversationGenre,
   generateGenreKeywords,
+  generateKeywordsFromTeachFile,
   buildWhisperPrompt,
   getTotalApiUsageStats,
   resetAllUsageStats,
@@ -24,7 +25,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.55';
+const APP_VERSION = 'v1.56';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -105,8 +106,10 @@ export default function App() {
 
   // Whisperプロンプト用（フック使用前に定義が必要）
   const [whisperPrompt, setWhisperPrompt] = useState<string>('');
+  const [teachFileKeywords, setTeachFileKeywords] = useState<string>(''); // TXT読み込み時に生成、TXT変更まで維持
   const [genreKeywords, setGenreKeywords] = useState<string>('');
   const detectedNounsRef = useRef<string[]>([]); // 検出済み固有名詞
+  const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false); // キーワード生成中フラグ
 
   // Whisper API
   const whisper = useWhisperRecognition({
@@ -192,12 +195,13 @@ export default function App() {
     }
   }, [audioLevel, isListening, gainValue, isClipping]);
 
-  // Whisperプロンプトを構築（教えるファイル・ジャンルキーワード・検出済み固有名詞から）
+  // Whisperプロンプトを構築（TXTキーワード・ジャンルキーワード・検出済み固有名詞から）
   useEffect(() => {
-    const prompt = buildWhisperPrompt(teachContent, genreKeywords, detectedNounsRef.current);
+    // TXT読み込み時に生成したキーワードを優先使用
+    const prompt = buildWhisperPrompt(teachFileKeywords || teachContent, genreKeywords, detectedNounsRef.current);
     setWhisperPrompt(prompt);
     console.log('[App] Whisper prompt updated:', prompt.slice(0, 100) + '...');
-  }, [teachContent, genreKeywords]);
+  }, [teachContent, teachFileKeywords, genreKeywords]);
 
   // 要約を更新
   const updateSummary = useCallback(async (conversation: string) => {
@@ -525,27 +529,40 @@ export default function App() {
             ref={teachFileInputRef}
             accept=".txt"
             style={{ display: 'none' }}
-            onChange={(e) => {
+            onChange={async (e) => {
               const file = e.target.files?.[0];
               if (file) {
                 const reader = new FileReader();
-                reader.onload = (event) => {
+                reader.onload = async (event) => {
                   const content = event.target?.result as string;
                   setTeachContent(content);
                   // ファイル名から.txtを除去
                   const nameWithoutExt = file.name.replace(/\.txt$/i, '');
                   setTeachFileName(nameWithoutExt);
+                  
+                  // TXT読み込み時にGeminiで関連キーワードを生成
+                  setIsGeneratingKeywords(true);
+                  try {
+                    const keywords = await generateKeywordsFromTeachFile(content, HARDCODED_API_KEY);
+                    setTeachFileKeywords(keywords);
+                    console.log('[App] Generated keywords from teach file:', keywords.slice(0, 100) + '...');
+                  } catch (err) {
+                    console.error('[App] Failed to generate keywords:', err);
+                  } finally {
+                    setIsGeneratingKeywords(false);
+                  }
                 };
                 reader.readAsText(file);
               }
             }}
           />
           <button
-            className={`teach-btn ${teachFileName ? 'has-file' : ''}`}
+            className={`teach-btn ${teachFileName ? 'has-file' : ''} ${isGeneratingKeywords ? 'generating' : ''}`}
             onClick={() => teachFileInputRef.current?.click()}
+            disabled={isGeneratingKeywords}
           >
-            📚 {teachFileName || '教える'}
-            {teachFileName && <span className="teach-indicator">✓</span>}
+            {isGeneratingKeywords ? '🔄 学習中...' : `📚 ${teachFileName || '教える'}`}
+            {teachFileName && !isGeneratingKeywords && <span className="teach-indicator">✓</span>}
           </button>
           {teachFileName && (
             <button
@@ -553,6 +570,7 @@ export default function App() {
               onClick={() => {
                 setTeachFileName('');
                 setTeachContent('');
+                setTeachFileKeywords(''); // キーワードもクリア
                 if (teachFileInputRef.current) {
                   teachFileInputRef.current.value = '';
                 }
