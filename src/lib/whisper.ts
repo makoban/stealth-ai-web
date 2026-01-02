@@ -175,10 +175,8 @@ export class AudioRecorder {
       const inputData = e.inputBuffer.getChannelData(0);
       
       // 音割れ検出
-      let hasClipping = false;
       for (let i = 0; i < inputData.length; i++) {
         if (Math.abs(inputData[i]) > 0.99) {
-          hasClipping = true;
           this.clippingCount++;
           this.lastClipTime = Date.now();
           break;
