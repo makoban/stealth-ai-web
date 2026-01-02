@@ -1,52 +1,50 @@
 /**
  * AudioWorklet Processor for AssemblyAI Streaming
  * 16kHz PCM audio data processing
+ * 
+ * Based on official implementation:
+ * https://github.com/AssemblyAI/realtime-transcription-browser-js-example
  */
+
+const MAX_16BIT_INT = 32767;
 
 class AudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.bufferSize = 2048; // Buffer size for accumulating samples
-    this.buffer = new Float32Array(this.bufferSize);
-    this.bufferIndex = 0;
   }
 
   process(inputs, outputs, parameters) {
-    const input = inputs[0];
-    
-    if (input.length > 0) {
-      const inputChannel = input[0];
-      
-      // Accumulate samples into buffer
-      for (let i = 0; i < inputChannel.length; i++) {
-        this.buffer[this.bufferIndex++] = inputChannel[i];
-        
-        // When buffer is full, convert to Int16 and send
-        if (this.bufferIndex >= this.bufferSize) {
-          // Convert Float32 (-1.0 to 1.0) to Int16 (-32768 to 32767)
-          const int16Buffer = new Int16Array(this.bufferSize);
-          for (let j = 0; j < this.bufferSize; j++) {
-            // Clamp value to -1.0 to 1.0 range
-            const sample = Math.max(-1, Math.min(1, this.buffer[j]));
-            // Convert to Int16
-            int16Buffer[j] = sample < 0 
-              ? sample * 0x8000 
-              : sample * 0x7FFF;
-          }
-          
-          // Send the audio data to the main thread
-          this.port.postMessage({
-            audio_data: int16Buffer
-          });
-          
-          // Reset buffer
-          this.bufferIndex = 0;
-        }
+    try {
+      const input = inputs[0];
+      if (!input || input.length === 0) {
+        return true;
       }
+
+      const channelData = input[0];
+      if (!channelData || channelData.length === 0) {
+        return true;
+      }
+
+      // Convert Float32 (-1.0 to 1.0) to Int16 (-32768 to 32767)
+      const float32Array = Float32Array.from(channelData);
+      const int16Array = Int16Array.from(
+        float32Array.map((n) => {
+          // Clamp value to -1.0 to 1.0 range
+          const clamped = Math.max(-1, Math.min(1, n));
+          return Math.round(clamped * MAX_16BIT_INT);
+        })
+      );
+
+      // Send the audio data buffer to the main thread
+      this.port.postMessage({
+        audio_data: int16Array.buffer
+      });
+
+      return true;
+    } catch (error) {
+      console.error('[AudioProcessor] Error:', error);
+      return true;
     }
-    
-    // Return true to keep the processor alive
-    return true;
   }
 }
 

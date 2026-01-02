@@ -39,6 +39,10 @@ export class AssemblyAIService {
   private isRecording = false;
   private turns: Map<number, string> = new Map();
   private audioChunksSent = 0;
+  
+  // Audio buffer for accumulating 100ms of audio before sending
+  private audioBufferQueue: Int16Array = new Int16Array(0);
+  private readonly MIN_BUFFER_DURATION_MS = 100; // Send every 100ms
 
   constructor(config: AssemblyAIConfig) {
     this.config = {
@@ -72,6 +76,16 @@ export class AssemblyAIService {
    */
   setOnStatus(callback: StatusCallback): void {
     this.onStatus = callback;
+  }
+
+  /**
+   * Merge two Int16Array buffers
+   */
+  private mergeBuffers(lhs: Int16Array, rhs: Int16Array): Int16Array {
+    const mergedBuffer = new Int16Array(lhs.length + rhs.length);
+    mergedBuffer.set(lhs, 0);
+    mergedBuffer.set(rhs, lhs.length);
+    return mergedBuffer;
   }
 
   /**
@@ -143,17 +157,17 @@ export class AssemblyAIService {
     console.log('[AssemblyAI] Microphone permission granted');
 
     // Create AudioContext with 16kHz sample rate
-    // Note: Some browsers may not support 16kHz, will fall back to default
+    // Using 'balanced' latencyHint as per official implementation
     try {
       this.audioContext = new AudioContext({
         sampleRate: this.config.sampleRate!,
-        latencyHint: 'interactive'
+        latencyHint: 'balanced'
       });
       console.log('[AssemblyAI] AudioContext created with sample rate:', this.audioContext.sampleRate);
     } catch (e) {
       console.warn('[AssemblyAI] Could not create AudioContext with 16kHz, using default');
       this.audioContext = new AudioContext({
-        latencyHint: 'interactive'
+        latencyHint: 'balanced'
       });
       console.log('[AssemblyAI] AudioContext created with default sample rate:', this.audioContext.sampleRate);
     }
@@ -176,20 +190,44 @@ export class AssemblyAIService {
 
     // Connect nodes
     this.source.connect(this.audioWorkletNode);
-    // Don't connect to destination to avoid feedback
-    // this.audioWorkletNode.connect(this.audioContext.destination);
+    // Connect to destination (required for some browsers to process audio)
+    this.audioWorkletNode.connect(this.audioContext.destination);
+
+    // Reset audio buffer
+    this.audioBufferQueue = new Int16Array(0);
 
     // Handle audio data from worklet
     this.audioWorkletNode.port.onmessage = (event) => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN && event.data.audio_data) {
-        // Send audio data as binary (ArrayBuffer)
-        const audioData = event.data.audio_data;
-        this.ws.send(audioData.buffer);
-        this.audioChunksSent++;
+        // Get Int16Array from worklet
+        const currentBuffer = new Int16Array(event.data.audio_data);
         
-        // Log every 50 chunks
-        if (this.audioChunksSent % 50 === 0) {
-          console.log(`[AssemblyAI] Audio chunks sent: ${this.audioChunksSent}`);
+        // Merge with existing buffer
+        this.audioBufferQueue = this.mergeBuffers(this.audioBufferQueue, currentBuffer);
+        
+        // Calculate buffer duration in milliseconds
+        const bufferDuration = (this.audioBufferQueue.length / this.audioContext!.sampleRate) * 1000;
+        
+        // Wait until we have MIN_BUFFER_DURATION_MS of audio data
+        if (bufferDuration >= this.MIN_BUFFER_DURATION_MS) {
+          const totalSamples = Math.floor(this.audioContext!.sampleRate * (this.MIN_BUFFER_DURATION_MS / 1000));
+          
+          // Create Uint8Array from Int16Array buffer (this is the key fix!)
+          const finalBuffer = new Uint8Array(
+            this.audioBufferQueue.subarray(0, totalSamples).buffer
+          );
+          
+          // Remove sent samples from queue
+          this.audioBufferQueue = this.audioBufferQueue.subarray(totalSamples);
+          
+          // Send audio data as Uint8Array (binary)
+          this.ws.send(finalBuffer);
+          this.audioChunksSent++;
+          
+          // Log every 50 chunks
+          if (this.audioChunksSent % 50 === 0) {
+            console.log(`[AssemblyAI] Audio chunks sent: ${this.audioChunksSent}`);
+          }
         }
       }
     };
@@ -209,6 +247,7 @@ export class AssemblyAIService {
     try {
       this.onStatus?.('connecting');
       this.audioChunksSent = 0;
+      this.audioBufferQueue = new Int16Array(0);
       
       // Get temporary token
       const token = await this.getTemporaryToken();
@@ -264,6 +303,14 @@ export class AssemblyAIService {
                 confidence: msg.confidence
               });
             }
+          } else if (msg.type === 'Begin') {
+            // v3 API uses 'Begin' instead of 'SessionBegins'
+            console.log('[AssemblyAI] Session started:', msg.id);
+            this.onTranscription?.({
+              type: 'SessionBegins',
+              session_id: msg.id,
+              transcript: ''
+            });
           } else if (msg.type === 'SessionBegins') {
             console.log('[AssemblyAI] Session started:', msg.session_id);
             this.onTranscription?.({
@@ -346,6 +393,9 @@ export class AssemblyAIService {
       this.mediaStream.getTracks().forEach(track => track.stop());
       this.mediaStream = null;
     }
+
+    // Clear audio buffer
+    this.audioBufferQueue = new Int16Array(0);
 
     this.isRecording = false;
     this.onStatus?.('disconnected');
