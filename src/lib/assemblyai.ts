@@ -1,7 +1,5 @@
 // AssemblyAI リアルタイム音声認識
 
-export const ASSEMBLYAI_API_KEY = import.meta.env.VITE_ASSEMBLYAI_API_KEY || '';
-
 // 話者情報付きの認識結果
 export interface SpeakerTranscript {
   text: string;
@@ -22,21 +20,16 @@ export class AssemblyAIRealtime {
   onError: ((error: string) => void) | null = null;
   onAudioLevel: ((level: number) => void) | null = null;
 
-  // 一時トークンを取得
+  // 一時トークンをバックエンドプロキシ経由で取得
   private async getTemporaryToken(): Promise<string> {
-    const response = await fetch('https://api.assemblyai.com/v2/realtime/token', {
-      method: 'POST',
-      headers: {
-        'Authorization': ASSEMBLYAI_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        expires_in: 3600, // 1時間有効
-      }),
+    // プロキシエンドポイントを使用（CORSを回避）
+    const response = await fetch('/api/assemblyai/token', {
+      method: 'GET',
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to get token: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`Failed to get token: ${response.status} - ${errorData.error || 'Unknown error'}`);
     }
 
     const data = await response.json();
