@@ -782,3 +782,20 @@
   line-height: 1.5;
   margin: 0;
 }
+
+/* ヘッダー内の音声レベルバー */
+.header-audio-level {
+  width: 60px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.header-level-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #32CD32 0%, #FFD700 50%, #FF6B6B 100%);
+  border-radius: 4px;
+  transition: width 0.05s ease-out;
+  min-width: 2px;
+}

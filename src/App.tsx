@@ -16,7 +16,7 @@ import {
 import { OPENAI_API_KEY } from './lib/whisper';
 import './App.css';
 
-const APP_VERSION = 'v1.25';
+const APP_VERSION = 'v1.26';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -66,11 +66,8 @@ export default function App() {
     return saved || OPENAI_API_KEY || '';
   });
   
-  // 音声増幅倍率（ローカルストレージから読み込み）
-  const [gainValue, setGainValue] = useState<number>(() => {
-    const saved = localStorage.getItem('audio_gain');
-    return saved ? parseFloat(saved) : 5.0;
-  });
+  // 音声増幅倍率（自動調整）
+  const [gainValue, setGainValue] = useState<number>(5.0);
 
   const [showSettings, setShowSettings] = useState(false);
 
@@ -81,10 +78,24 @@ export default function App() {
     }
   }, [openaiApiKey]);
 
-  // 増幅倍率が変更されたらローカルストレージに保存
+  // 増幅倍率の自動調整
   useEffect(() => {
-    localStorage.setItem('audio_gain', gainValue.toString());
-  }, [gainValue]);
+    if (!isListening) return;
+    
+    // 音声レベルに基づいて自動調整
+    const targetLevel = 0.3; // 目標レベル30%
+    const currentLevel = audioLevel;
+    
+    if (currentLevel > 0.01) { // 無音でない場合のみ調整
+      if (currentLevel < targetLevel * 0.5 && gainValue < 10) {
+        // 音が小さすぎる場合は増幅を上げる
+        setGainValue(prev => Math.min(prev + 0.2, 10));
+      } else if (currentLevel > targetLevel * 1.5 && gainValue > 1) {
+        // 音が大きすぎる場合は増幅を下げる
+        setGainValue(prev => Math.max(prev - 0.2, 1));
+      }
+    }
+  }, [audioLevel, isListening, gainValue]);
 
   // Whisper API
   const {
@@ -318,6 +329,11 @@ export default function App() {
           <button onClick={() => setShowLevelSelector(true)} className="level-btn">
             📚 {KNOWLEDGE_LEVEL_LABELS[knowledgeLevel]}
           </button>
+          {isListening && (
+            <div className="header-audio-level">
+              <div className="header-level-bar" style={{ width: `${Math.min(audioLevel * 100 * 2, 100)}%` }} />
+            </div>
+          )}
         </div>
       </header>
 
@@ -325,35 +341,9 @@ export default function App() {
       <main className="main-content">
         {/* リアルタイム欄 */}
         <section className="section realtime-section">
-          <div className="realtime-header">
-            <h2>🎙️ リアルタイム</h2>
-            <div className="gain-control">
-              <span className="gain-label">増幅: {gainValue.toFixed(1)}x</span>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                step="0.5"
-                value={gainValue}
-                onChange={(e) => setGainValue(parseFloat(e.target.value))}
-                className="gain-slider"
-              />
-            </div>
-          </div>
-          {isListening && (
-            <div className="audio-level-container">
-              <div className="audio-level-bar" style={{ width: `${Math.min(audioLevel * 100 * 2, 100)}%` }} />
-              <span className="audio-level-text">{(audioLevel * 100).toFixed(0)}%</span>
-            </div>
-          )}
           <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
-            {interimTranscript || (isListening ? '音声を待機中...' : '録音を開始してください')}
+            {interimTranscript || (isListening ? '音声を待機中...' : '会話解析を開始してください')}
           </div>
-          {isListening && processingStatus && (
-            <div style={{ fontSize: '11px', color: '#888', marginTop: '4px', textAlign: 'center' }}>
-              {processingStatus}
-            </div>
-          )}
         </section>
 
         {/* 会話欄 */}
@@ -448,7 +438,7 @@ export default function App() {
           className={`control-btn record ${isListening ? 'recording' : ''}`}
           onClick={toggleRecording}
         >
-          {isListening ? '⏹️ 録音停止' : '🎤 録音開始'}
+          {isListening ? '⏹️ 解析停止' : '🎤 会話解析'}
         </button>
       </footer>
 
@@ -481,25 +471,6 @@ export default function App() {
           <div className="modal settings-modal" onClick={e => e.stopPropagation()}>
             <h2>⚙️ 設定 & API使用量</h2>
             
-            <div className="settings-section">
-              <h3>音声増幅</h3>
-              <p className="settings-description">
-                マイクの感度を調整します。小さな声を拾いたい場合は値を上げてください。
-              </p>
-              <div className="gain-setting">
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  step="0.5"
-                  value={gainValue}
-                  onChange={(e) => setGainValue(parseFloat(e.target.value))}
-                  className="gain-slider-large"
-                />
-                <span className="gain-value">{gainValue.toFixed(1)}x</span>
-              </div>
-            </div>
-
             <div className="settings-section">
               <h3>OpenAI APIキー</h3>
               <input

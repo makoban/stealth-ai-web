@@ -236,7 +236,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
       recorderRef.current = recorder;
       setState('listening');
-      setProcessingStatus('録音中');
+      setProcessingStatus('解析中');
 
       // 定期的に音声を処理
       intervalRef.current = setInterval(() => {
