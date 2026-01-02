@@ -14,9 +14,10 @@ import {
   TotalApiUsageStats,
 } from './lib/gemini';
 import { OPENAI_API_KEY } from './lib/whisper';
+import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.29';
+const APP_VERSION = 'v1.30';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -47,6 +48,7 @@ interface LookedUpWord {
   word: string;
   category: string;
   explanation: string;
+  url?: string;
   timestamp: Date;
 }
 
@@ -216,6 +218,7 @@ export default function App() {
             word: noun.word,
             category: noun.category,
             explanation: explanations[0].description,
+            url: explanations[0].url,
             timestamp: new Date(),
           }]);
         }
@@ -420,6 +423,17 @@ export default function App() {
                       <span className="word-category">{word.category}</span>
                     </div>
                     <p className="word-explanation">{word.explanation}</p>
+                    {word.url && (
+                      <a
+                        href={word.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="word-url"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        🔗 参考リンク
+                      </a>
+                    )}
                   </div>
                 ))
               )}
@@ -434,10 +448,17 @@ export default function App() {
           🗑️ リセット
         </button>
         <button
+          className="control-btn excel"
+          onClick={() => exportToExcel(conversations, summaryHistory, lookedUpWords)}
+          disabled={conversations.length === 0 && summaryHistory.length === 0 && lookedUpWords.length === 0}
+        >
+          📊 エクセル出力
+        </button>
+        <button
           className={`control-btn record ${isListening ? 'recording' : ''}`}
           onClick={toggleRecording}
         >
-          {isListening ? '⏹️ 解析停止' : '🎤 会話解析'}
+          {isListening ? '⏹️ 解析停止' : '🎙️ 会話解析'}
         </button>
       </footer>
 

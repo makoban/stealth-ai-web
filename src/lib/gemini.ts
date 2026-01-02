@@ -110,6 +110,7 @@ export interface Candidate {
   name: string;
   description: string;
   confidence: number;
+  url?: string;
 }
 
 // 会話要約の型
@@ -210,8 +211,9 @@ export async function explainProperNoun(
 
 文脈: "${context}"
 
-この文脈で最も適切な解釈を1〜3個、JSON形式で回答してください:
-[{"name": "正式名称", "description": "説明（100文字以内）", "confidence": 0.9}]`;
+この文脈で最も適切な解釈を1〜3個、JSON形式で回答してください。
+参考URLはWikipediaや公式サイトなど信頼できるソースを優先してください。
+[{"name": "正式名称", "description": "説明（100文字以内）", "confidence": 0.9, "url": "参考URL"}]`;
 
   try {
     const response = await callGemini(prompt, apiKey);
