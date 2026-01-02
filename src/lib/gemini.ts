@@ -1,5 +1,5 @@
 // Gemini APIキー（環境変数またはデフォルト値）
-export const HARDCODED_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyA7A1Qwyqh2TprxrLtcYdA4EUyfiQ05L3U';
+export const HARDCODED_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
 // 知識レベルの型
 export type KnowledgeLevel = 'elementary' | 'middle' | 'high' | 'university' | 'expert';
