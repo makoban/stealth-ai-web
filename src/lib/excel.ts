@@ -12,6 +12,9 @@ export interface ConversationEntry {
 export interface SummaryEntry {
   summary: string;
   topics: string[];
+  context?: string;
+  participants?: string;
+  purpose?: string;
   timestamp: Date;
 }
 
@@ -73,11 +76,14 @@ export function exportToExcel(
 
   // === 要約シート ===
   const summaryData = [
-    ['時間', '要約', 'トピック'],
+    ['時間', '要約', 'トピック', '場面', '参加者', '目的'],
     ...summaries.map(entry => [
       formatTime(entry.timestamp),
       entry.summary,
       entry.topics.join(', '),
+      entry.context || '',
+      entry.participants || '',
+      entry.purpose || '',
     ]),
   ];
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
@@ -85,8 +91,11 @@ export function exportToExcel(
   // 列幅を設定
   summarySheet['!cols'] = [
     { wch: 10 },  // 時間
-    { wch: 60 },  // 要約
-    { wch: 30 },  // トピック
+    { wch: 50 },  // 要約
+    { wch: 25 },  // トピック
+    { wch: 20 },  // 場面
+    { wch: 20 },  // 参加者
+    { wch: 20 },  // 目的
   ];
   
   XLSX.utils.book_append_sheet(workbook, summarySheet, '要約');

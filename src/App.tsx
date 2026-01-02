@@ -17,7 +17,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.31';
+const APP_VERSION = 'v1.32';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -56,6 +56,9 @@ interface LookedUpWord {
 interface SummaryEntry {
   summary: string;
   topics: string[];
+  context?: string;      // 会話の場面予想
+  participants?: string; // 参加者予想
+  purpose?: string;      // 会話の目的予想
   timestamp: Date;
 }
 
@@ -161,9 +164,12 @@ export default function App() {
       if (result.summary) {
         conversationSummaryRef.current = result;
         setSummaryHistory(prev => {
-          const newEntry = {
+          const newEntry: SummaryEntry = {
             summary: result.summary,
             topics: result.topics,
+            context: result.context,
+            participants: result.participants,
+            purpose: result.purpose,
             timestamp: new Date(),
           };
           return [newEntry, ...prev.slice(0, 4)];
@@ -396,6 +402,13 @@ export default function App() {
                         {entry.topics.map((topic, i) => (
                           <span key={i} className="topic-tag">{topic}</span>
                         ))}
+                      </div>
+                    )}
+                    {(entry.context || entry.participants || entry.purpose) && (
+                      <div className="summary-prediction">
+                        {entry.context && <span className="prediction-item">🎬 {entry.context}</span>}
+                        {entry.participants && <span className="prediction-item">👥 {entry.participants}</span>}
+                        {entry.purpose && <span className="prediction-item">🎯 {entry.purpose}</span>}
                       </div>
                     )}
                   </div>

@@ -118,6 +118,9 @@ export interface ConversationSummary {
   summary: string;
   topics: string[];
   keyPoints: string[];
+  context?: string;      // 会話の状況予想（例：会議、雑談、講義など）
+  participants?: string; // 参加者の予想（例：上司と部下、友人同士など）
+  purpose?: string;      // 会話の目的予想（例：情報共有、意思決定など）
 }
 
 // 修正された会話の型
@@ -257,8 +260,13 @@ export async function summarizeConversation(
 
   const fullPrompt = `${prompt}
 
+また、会話の状況を予想してください：
+- これは何の場面か（会議、雑談、講義、商談、インタビューなど）
+- 誰が話しているか（上司と部下、友人同士、先生と生徒、営業と顧客など）
+- 会話の目的は何か（情報共有、意思決定、問題解決、アイデア出しなど）
+
 JSON形式で回答してください:
-{"summary": "要約（50文字以内）", "topics": ["トピック1", "トピック2"], "keyPoints": ["ポイント1", "ポイント2"]}`;
+{"summary": "要約（50文字以内）", "topics": ["トピック1", "トピック2"], "keyPoints": ["ポイント1", "ポイント2"], "context": "会話の場面", "participants": "参加者の予想", "purpose": "会話の目的"}`;
 
   try {
     const response = await callGemini(fullPrompt, apiKey);
@@ -266,9 +274,9 @@ JSON形式で回答してください:
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
-    return { summary: '', topics: [], keyPoints: [] };
+    return { summary: '', topics: [], keyPoints: [], context: '', participants: '', purpose: '' };
   } catch {
-    return { summary: '', topics: [], keyPoints: [] };
+    return { summary: '', topics: [], keyPoints: [], context: '', participants: '', purpose: '' };
   }
 }
 
