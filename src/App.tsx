@@ -22,7 +22,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.41';
+const APP_VERSION = 'v1.42';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper' | 'assemblyai';
@@ -316,21 +316,35 @@ export default function App() {
         HARDCODED_API_KEY
       );
 
-      // 全ての固有名詞を統合（確実 + 候補 + 人名 + 地名 + 組織名）
+      // 知識レベルに応じた閾値設定
+      // 小学生: 何でも調べる（閾値低め）
+      // 専門家: 本当に専門的なものだけ（閾値高め）
+      const levelThresholds: Record<KnowledgeLevel, { confirmed: number; candidate: number; includeCandidates: boolean }> = {
+        elementary: { confirmed: 0.5, candidate: 0.3, includeCandidates: true },   // 小学生: 何でも調べる
+        middle: { confirmed: 0.6, candidate: 0.4, includeCandidates: true },       // 中学生: 幅広く調べる
+        high: { confirmed: 0.7, candidate: 0.5, includeCandidates: true },         // 高校生: やや絞る
+        university: { confirmed: 0.75, candidate: 0.6, includeCandidates: false }, // 大学生: 確実なもの中心
+        expert: { confirmed: 0.85, candidate: 0.8, includeCandidates: false },     // 専門家: 本当に専門的なものだけ
+      };
+
+      const thresholds = levelThresholds[knowledgeLevel];
+
+      // 知識レベルに応じて固有名詞を統合
       const allNouns: (ProperNoun & { source: string })[] = [
         ...result.confirmed.map(n => ({ ...n, source: 'confirmed' })),
-        ...result.candidates.map(n => ({ ...n, source: 'candidate' })),
-        ...result.possibleNames.map(n => ({ ...n, source: 'name' })),
-        ...result.possiblePlaces.map(n => ({ ...n, source: 'place' })),
-        ...result.possibleOrgs.map(n => ({ ...n, source: 'org' })),
+        // 候補は知識レベルが低い場合のみ含める
+        ...(thresholds.includeCandidates ? result.candidates.map(n => ({ ...n, source: 'candidate' })) : []),
+        ...(thresholds.includeCandidates ? result.possibleNames.map(n => ({ ...n, source: 'name' })) : []),
+        ...(thresholds.includeCandidates ? result.possiblePlaces.map(n => ({ ...n, source: 'place' })) : []),
+        ...(thresholds.includeCandidates ? result.possibleOrgs.map(n => ({ ...n, source: 'org' })) : []),
       ];
 
-      console.log('[App] Detected nouns:', allNouns.length, 'confirmed:', result.confirmed.length, 'candidates:', result.candidates.length);
+      console.log('[App] Detected nouns:', allNouns.length, 'confirmed:', result.confirmed.length, 'candidates:', result.candidates.length, 'level:', knowledgeLevel);
 
       for (const noun of allNouns) {
         if (processedWordsRef.current.has(noun.word)) continue;
-        // 候補は確信度が低くても調査する（閾値を下げる）
-        const confidenceThreshold = noun.source === 'confirmed' ? 0.6 : 0.4;
+        // 知識レベルに応じた閾値を適用
+        const confidenceThreshold = noun.source === 'confirmed' ? thresholds.confirmed : thresholds.candidate;
         if (noun.confidence < confidenceThreshold) continue;
 
         processedWordsRef.current.add(noun.word);
