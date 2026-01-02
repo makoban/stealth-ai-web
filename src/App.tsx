@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useWhisperRecognition } from './hooks/useWhisperRecognition';
+import { useWhisperRecognition, RealtimeTextResult } from './hooks/useWhisperRecognition';
 // AssemblyAIは日本語非対応のため削除済み
 import {
   detectProperNounsExtended,
   investigateProperNoun,
   summarizeConversation,
-  correctConversationWithGenre,
   detectConversationGenre,
   getTotalApiUsageStats,
   resetAllUsageStats,
@@ -22,7 +21,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.48';
+const APP_VERSION = 'v1.49';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -151,6 +150,9 @@ export default function App() {
   const lastProcessedTranscript = useRef('');
   const conversationSummaryRef = useRef<ConversationSummary | null>(null);
   const processedWordsRef = useRef<Set<string>>(new Set());
+  
+  // リアルタイム整形で検出された固有名詞のキュー
+  const realtimeProperNounsRef = useRef<string[]>([]);
 
   // API使用量を定期更新
   useEffect(() => {
@@ -182,6 +184,37 @@ export default function App() {
       setGainValue(prev => Math.max(prev - 2, 10));
     }
   }, [audioLevel, isListening, gainValue, isClipping]);
+
+  // Whisperフックにコンテキストとジャンルを渡す
+  useEffect(() => {
+    whisper.updateContext(fullConversation);
+  }, [fullConversation, whisper]);
+
+  useEffect(() => {
+    whisper.updateGenre(currentGenre);
+  }, [currentGenre, whisper]);
+
+  // リアルタイム整形コールバックを設定
+  useEffect(() => {
+    const handleRealtimeCorrection = (result: RealtimeTextResult) => {
+      console.log('[App] Realtime correction received:', result);
+      
+      // 検出された固有名詞をキューに追加
+      if (result.detectedProperNouns && result.detectedProperNouns.length > 0) {
+        realtimeProperNounsRef.current = [
+          ...realtimeProperNounsRef.current,
+          ...result.detectedProperNouns,
+        ];
+        console.log('[App] Queued proper nouns:', realtimeProperNounsRef.current);
+      }
+    };
+    
+    whisper.setRealtimeCorrectionCallback(handleRealtimeCorrection);
+    
+    return () => {
+      whisper.setRealtimeCorrectionCallback(null);
+    };
+  }, [whisper]);
 
   // 要約を更新
   const updateSummary = useCallback(async (conversation: string) => {
@@ -218,7 +251,7 @@ export default function App() {
   }, []);
 
   // ジャンルを推定
-  const updateGenre = useCallback(async (conversation: string) => {
+  const updateGenreState = useCallback(async (conversation: string) => {
     // 最後のジャンル更新から10秒以上経過、かつ100文字以上の会話がある場合のみ更新
     const now = Date.now();
     if (now - lastGenreUpdateRef.current < 10000) return;
@@ -248,31 +281,15 @@ export default function App() {
     }
   }, [currentGenre, isDetectingGenre]);
 
-  // テキストを処理（修正、拡張固有名詞検出）- 候補を含む幅広い検出
-  const processText = useCallback(async (text: string) => {
-    console.log('[App] processText called:', text);
-    if (!text.trim()) {
-      console.log('[App] Skipping processText - empty text');
-      return;
-    }
+  // 固有名詞を調査（整形済みテキストから）
+  const investigateProperNouns = useCallback(async (text: string, preDetectedNouns: string[]) => {
+    console.log('[App] investigateProperNouns called:', text, 'preDetected:', preDetectedNouns);
+    if (!text.trim()) return;
 
     try {
-      // 会話を修正（ジャンルコンテキストを使用）
-      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, HARDCODED_API_KEY);
-
-      const entry: ConversationEntry = {
-        id: Date.now().toString(),
-        text: corrected.correctedText,
-        originalText: corrected.wasModified ? text : undefined,
-        uncertainWords: corrected.uncertainWords,
-        timestamp: new Date(),
-      };
-
-      setConversations(prev => [...prev, entry]);
-
       // 拡張固有名詞検出（候補を含む幅広い検出）
       const result: ExtendedProperNounResult = await detectProperNounsExtended(
-        corrected.correctedText,
+        text,
         knowledgeLevel,
         currentGenre,
         fullConversation,
@@ -280,14 +297,12 @@ export default function App() {
       );
 
       // 知識レベルに応じた閾値設定
-      // 小学生: 何でも調べる（閾値低め）
-      // 専門家: 本当に専門的なものだけ（閾値高め）
       const levelThresholds: Record<KnowledgeLevel, { confirmed: number; candidate: number; includeCandidates: boolean }> = {
-        elementary: { confirmed: 0.5, candidate: 0.3, includeCandidates: true },   // 小学生: 何でも調べる
-        middle: { confirmed: 0.6, candidate: 0.4, includeCandidates: true },       // 中学生: 幅広く調べる
-        high: { confirmed: 0.7, candidate: 0.5, includeCandidates: true },         // 高校生: やや絞る
-        university: { confirmed: 0.75, candidate: 0.6, includeCandidates: false }, // 大学生: 確実なもの中心
-        expert: { confirmed: 0.85, candidate: 0.8, includeCandidates: false },     // 専門家: 本当に専門的なものだけ
+        elementary: { confirmed: 0.5, candidate: 0.3, includeCandidates: true },
+        middle: { confirmed: 0.6, candidate: 0.4, includeCandidates: true },
+        high: { confirmed: 0.7, candidate: 0.5, includeCandidates: true },
+        university: { confirmed: 0.75, candidate: 0.6, includeCandidates: false },
+        expert: { confirmed: 0.85, candidate: 0.8, includeCandidates: false },
       };
 
       const thresholds = levelThresholds[knowledgeLevel];
@@ -295,20 +310,30 @@ export default function App() {
       // 知識レベルに応じて固有名詞を統合
       const allNouns: (ProperNoun & { source: string })[] = [
         ...result.confirmed.map(n => ({ ...n, source: 'confirmed' })),
-        // 候補は知識レベルが低い場合のみ含める
         ...(thresholds.includeCandidates ? result.candidates.map(n => ({ ...n, source: 'candidate' })) : []),
         ...(thresholds.includeCandidates ? result.possibleNames.map(n => ({ ...n, source: 'name' })) : []),
         ...(thresholds.includeCandidates ? result.possiblePlaces.map(n => ({ ...n, source: 'place' })) : []),
         ...(thresholds.includeCandidates ? result.possibleOrgs.map(n => ({ ...n, source: 'org' })) : []),
       ];
 
+      // リアルタイム整形で検出された固有名詞も追加
+      for (const noun of preDetectedNouns) {
+        if (!allNouns.some(n => n.word === noun)) {
+          allNouns.push({
+            word: noun,
+            category: '固有名詞',
+            confidence: 0.8,
+            source: 'realtime',
+          });
+        }
+      }
+
       console.log('[App] Detected nouns:', allNouns.length, 'confirmed:', result.confirmed.length, 'candidates:', result.candidates.length, 'level:', knowledgeLevel);
 
       for (const noun of allNouns) {
         if (processedWordsRef.current.has(noun.word)) continue;
-        // 知識レベルに応じた閾値を適用
         const confidenceThreshold = noun.source === 'confirmed' ? thresholds.confirmed : thresholds.candidate;
-        if (noun.confidence < confidenceThreshold) continue;
+        if (noun.confidence < confidenceThreshold && noun.source !== 'realtime') continue;
 
         processedWordsRef.current.add(noun.word);
 
@@ -349,7 +374,7 @@ export default function App() {
     }
   }, [fullConversation, knowledgeLevel, currentGenre]);
 
-  // transcript変更を監視
+  // transcript変更を監視（整形済みテキストが会話欄に移動したとき）
   useEffect(() => {
     console.log('[App] transcript changed:', { 
       transcript: transcript?.substring(0, 50), 
@@ -372,21 +397,33 @@ export default function App() {
         const filteredText = filteredSegments.join(' ');
         console.log('[App] Processing text:', filteredText);
         
+        // リアルタイム整形で検出された固有名詞を取得してクリア
+        const preDetectedNouns = [...realtimeProperNounsRef.current];
+        realtimeProperNounsRef.current = [];
+        
         setFullConversation(prev => {
           const updated = prev + ' ' + filteredText;
           console.log('[App] fullConversation length:', updated.length);
           updateSummary(updated.trim());
-          updateGenre(updated.trim()); // ジャンル推定も更新
+          updateGenreState(updated.trim());
           return updated;
         });
 
+        // 会話エントリを追加（既に整形済みのテキスト）
         filteredSegments.forEach(segment => {
-          console.log('[App] Calling processText:', segment.trim());
-          processText(segment.trim());
+          const entry: ConversationEntry = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            text: segment.trim(),
+            timestamp: new Date(),
+          };
+          setConversations(prev => [...prev, entry]);
         });
+
+        // 固有名詞を調査
+        investigateProperNouns(filteredText, preDetectedNouns);
       }
     }
-  }, [transcript, updateSummary, updateGenre, processText]);
+  }, [transcript, updateSummary, updateGenreState, investigateProperNouns]);
 
   // 録音開始/停止
   const toggleRecording = () => {
@@ -414,8 +451,9 @@ export default function App() {
     lastProcessedTranscript.current = '';
     resetAllUsageStats();
     setApiUsage(getTotalApiUsageStats());
-    setCurrentGenre(null); // ジャンルもリセット
+    setCurrentGenre(null);
     lastGenreUpdateRef.current = 0;
+    realtimeProperNounsRef.current = [];
   };
 
   // 接続状態の色
@@ -600,7 +638,7 @@ export default function App() {
                                 className="alt-url"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                🔗
+                                🔗 参考
                               </a>
                             )}
                           </div>
@@ -615,33 +653,76 @@ export default function App() {
         )}
       </main>
 
-      {/* コントロールバー */}
-      <footer className="control-bar">
-        <button className="control-btn reset" onClick={handleReset}>
-          🗑️ リセット
-        </button>
+      {/* フッター */}
+      <footer className="footer">
         <button
-          className="control-btn excel"
-          onClick={() => exportToExcel(conversations, summaryHistory, lookedUpWords)}
-          disabled={conversations.length === 0 && summaryHistory.length === 0 && lookedUpWords.length === 0}
-        >
-          📊 エクセル出力
-        </button>
-        <button
-          className={`control-btn record ${isListening ? 'recording' : ''}`}
+          className={`record-btn ${isListening ? 'recording' : ''}`}
           onClick={toggleRecording}
         >
-          {isListening ? '⏹️ 解析停止' : '🎙️ 会話解析'}
+          {isListening ? '⏹ 停止' : '🎤 開始'}
+        </button>
+        <button className="reset-btn" onClick={handleReset}>
+          🗑 リセット
+        </button>
+        <button
+          className="export-btn"
+          onClick={() => exportToExcel(conversations, summaryHistory, lookedUpWords)}
+          disabled={conversations.length === 0}
+        >
+          📊 Excel出力
         </button>
       </footer>
+
+      {/* エラー表示 */}
+      {speechError && (
+        <div className="error-toast">
+          ⚠️ {speechError}
+        </div>
+      )}
+
+      {/* 設定モーダル */}
+      {showSettings && (
+        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>⚙️ 設定</h2>
+            <div className="setting-item">
+              <label>音声増幅: {gainValue}x</label>
+              <input
+                type="range"
+                min="1"
+                max="50"
+                value={gainValue}
+                onChange={(e) => setGainValue(Number(e.target.value))}
+              />
+            </div>
+            <div className="setting-item">
+              <label>音声認識エンジン</label>
+              <p className="setting-info">Whisper (OpenAI) - 高精度な日本語認識</p>
+            </div>
+            <div className="setting-item">
+              <label>API使用状況</label>
+              <div className="api-stats">
+                <p>Gemini: {apiUsage.gemini.callCount}回 (${apiUsage.gemini.estimatedCost.toFixed(4)})</p>
+                <p>Whisper: {apiUsage.whisper.callCount}回 ({(apiUsage.whisper.totalDurationSeconds / 60).toFixed(1)}分) (${apiUsage.whisper.estimatedCost.toFixed(4)})</p>
+                <p><strong>合計: ${apiUsage.totalCost.toFixed(4)}</strong></p>
+              </div>
+            </div>
+            <button onClick={() => setShowSettings(false)}>閉じる</button>
+          </div>
+        </div>
+      )}
 
       {/* 知識レベル選択モーダル */}
       {showLevelSelector && (
         <div className="modal-overlay" onClick={() => setShowLevelSelector(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>📚 知識レベル</h2>
+          <div className="modal level-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>📚 知識レベル設定</h2>
+            <p className="level-description">
+              あなたの知識レベルを選択してください。<br />
+              選択したレベルで「知らない」と思われる単語を調べます。
+            </p>
             <div className="level-options">
-              {(Object.keys(KNOWLEDGE_LEVEL_LABELS) as KnowledgeLevel[]).map(level => (
+              {(Object.keys(KNOWLEDGE_LEVEL_LABELS) as KnowledgeLevel[]).map((level) => (
                 <button
                   key={level}
                   className={`level-option ${knowledgeLevel === level ? 'selected' : ''}`}
@@ -650,56 +731,19 @@ export default function App() {
                     setShowLevelSelector(false);
                   }}
                 >
-                  {KNOWLEDGE_LEVEL_LABELS[level]}
+                  <span className="level-name">{KNOWLEDGE_LEVEL_LABELS[level]}</span>
+                  <span className="level-hint">
+                    {level === 'elementary' && '何でも調べる'}
+                    {level === 'middle' && '幅広く調べる'}
+                    {level === 'high' && '一般的な用語は除外'}
+                    {level === 'university' && '専門用語中心'}
+                    {level === 'expert' && 'ニッチな用語のみ'}
+                  </span>
                 </button>
               ))}
             </div>
+            <button onClick={() => setShowLevelSelector(false)}>閉じる</button>
           </div>
-        </div>
-      )}
-
-      {/* 設定モーダル */}
-      {showSettings && (
-        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
-          <div className="modal settings-modal" onClick={e => e.stopPropagation()}>
-            <h2>⚙️ 設定 & API使用量</h2>
-            
-            <div className="settings-section">
-              <h3>🎯 音声認識エンジン</h3>
-              <p className="engine-description">
-                🐬 Whisper（OpenAI）- 日本語高精度
-              </p>
-            </div>
-
-            <div className="settings-section">
-              <h3>API使用量</h3>
-              <div className="usage-details">
-                <div className="usage-row">
-                  <span>Gemini（AI処理）:</span>
-                  <span>{apiUsage.gemini.callCount}回 / ${apiUsage.gemini.estimatedCost.toFixed(4)}</span>
-                </div>
-                <div className="usage-row">
-                  <span>Whisper（音声認識）:</span>
-                  <span>{apiUsage.whisper.callCount}回 / ${apiUsage.whisper.estimatedCost.toFixed(4)}</span>
-                </div>
-                <div className="usage-row total">
-                  <span>合計:</span>
-                  <span>${apiUsage.totalCost.toFixed(4)}</span>
-                </div>
-              </div>
-            </div>
-
-            <button className="close-btn" onClick={() => setShowSettings(false)}>
-              閉じる
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* エラー表示 */}
-      {speechError && (
-        <div className="error-toast">
-          {speechError}
         </div>
       )}
     </div>

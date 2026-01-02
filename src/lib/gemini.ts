@@ -142,6 +142,15 @@ export interface CorrectedConversation {
   wasModified: boolean;
 }
 
+// リアルタイム整形結果の型
+export interface RealtimeCorrectionResult {
+  correctedText: string;
+  originalText: string;
+  wasModified: boolean;
+  detectedProperNouns: string[];  // 検出された固有名詞
+  confidence: number;
+}
+
 // Gemini APIを呼び出す共通関数
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
   console.log('[Gemini] callGemini called, apiKey:', apiKey ? apiKey.substring(0, 10) + '...' : 'MISSING');
@@ -177,6 +186,105 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
   apiUsageStats.outputTokens += outputTokens;
 
   return text;
+}
+
+// リアルタイム日本語整形（Whisper出力を即座に整形）
+export async function correctRealtimeText(
+  rawText: string,
+  conversationContext: string,
+  genre: ConversationGenre | null,
+  apiKey: string
+): Promise<RealtimeCorrectionResult> {
+  console.log('[Gemini] correctRealtimeText called:', rawText);
+  
+  const genreContext = genre && genre.confidence > 0.5
+    ? `
+【会話のジャンル】: ${genre.primary}${genre.secondary.length > 0 ? `（関連: ${genre.secondary.join('、')}）` : ''}
+キーワード: ${genre.keywords.join('、')}
+このジャンルでよく使われる用語を考慮してください。`
+    : '';
+
+  const contextHint = conversationContext && conversationContext.length > 0
+    ? `
+【これまでの会話】:
+"${conversationContext.slice(-500)}"
+`
+    : '';
+
+  const prompt = `音声認識（Whisper）で取得した以下のテキストを、正確な日本語に整形してください。
+
+【入力テキスト】: "${rawText}"
+${contextHint}
+${genreContext}
+
+【整形ルール】
+1. **誤認識の修正**: 音声認識の誤りを文脈から推測して修正
+   - 例: 「あいふぉん」→「iPhone」、「ぐーぐる」→「Google」
+   - 例: 「きょうと」→「京都」（地名の場合）
+   - 例: 「たなかさん」→「田中さん」
+
+2. **固有名詞の正規化**: 
+   - 人名、地名、会社名、製品名などを正しい表記に
+   - カタカナ語は適切な表記に（英語表記が一般的なら英語に）
+
+3. **文法の修正**:
+   - 助詞の誤りを修正
+   - 不自然な言い回しを自然に
+
+4. **固有名詞の検出**:
+   - 整形後のテキストから固有名詞を抽出
+
+【重要】
+- 意味を変えないこと
+- 過度な修正はしないこと
+- 不確かな修正は避けること
+
+JSON形式で回答してください:
+{
+  "correctedText": "整形後のテキスト",
+  "wasModified": true,
+  "detectedProperNouns": ["固有名詞1", "固有名詞2"],
+  "confidence": 0.9
+}
+
+修正不要の場合:
+{
+  "correctedText": "${rawText}",
+  "wasModified": false,
+  "detectedProperNouns": [],
+  "confidence": 1.0
+}`;
+
+  try {
+    const response = await callGemini(prompt, apiKey);
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const result = JSON.parse(jsonMatch[0]);
+      return {
+        correctedText: result.correctedText || rawText,
+        originalText: rawText,
+        wasModified: result.wasModified || false,
+        detectedProperNouns: result.detectedProperNouns || [],
+        confidence: result.confidence || 0.8,
+      };
+    }
+    return {
+      correctedText: rawText,
+      originalText: rawText,
+      wasModified: false,
+      detectedProperNouns: [],
+      confidence: 1.0,
+    };
+  } catch (e) {
+    console.error('[Gemini] correctRealtimeText error:', e);
+    return {
+      correctedText: rawText,
+      originalText: rawText,
+      wasModified: false,
+      detectedProperNouns: [],
+      confidence: 1.0,
+    };
+  }
 }
 
 // 固有名詞を検出
@@ -366,38 +474,41 @@ export async function detectConversationGenre(
   const genreListStr = GENRE_LIST.join('、');
   
   const prompt = previousGenres && previousGenres.length > 0
-    ? `前回推定されたジャンル: ${previousGenres.join('、')}
+    ? `前回のジャンル推定: ${previousGenres.join('、')}
 
 新しい会話内容: "${conversation}"
 
-前回のジャンル推定を踏まえて、この会話のジャンルを再評価してください。`
+前回の推定を踏まえて、会話のジャンルを再推定してください。`
     : `会話内容: "${conversation}"
 
 この会話のジャンルを推定してください。`;
 
   const fullPrompt = `${prompt}
 
-以下のジャンルから最も適切なものを選んでください（複数可）:
+【ジャンル一覧】
 ${genreListStr}
 
-重要:
-- 会話の中で言及されている具体的なキーワードを抽出してください
-- 例えば「ラーメン」「寿司」などの単語があれば「食べ物・グルメ」
-- 「会議」「プロジェクト」などがあれば「ビジネス・仕事」
-- 複数のジャンルにまたがる場合は、主要ジャンルと副次的ジャンルを分けてください
+【指示】
+1. 最も適切な主要ジャンルを1つ選んでください
+2. 関連する副次的ジャンルを0〜2個選んでください
+3. ジャンル判定の根拠となるキーワードを抽出してください
+4. このジャンルに基づく会話のコンテキストを説明してください
 
 JSON形式で回答してください:
-{"primary": "主要ジャンル", "secondary": ["副次的ジャンル1", "副次的ジャンル2"], "confidence": 0.8, "keywords": ["検出キーワード1", "検出キーワード2"], "context": "このジャンルに基づく会話の解釈（30文字以内）"}
-
-会話が短すぎてジャンル判定が難しい場合:
-{"primary": "日常会話", "secondary": [], "confidence": 0.3, "keywords": [], "context": "ジャンル判定には情報が不足"}`;
+{
+  "primary": "主要ジャンル",
+  "secondary": ["副次的ジャンル1", "副次的ジャンル2"],
+  "confidence": 0.8,
+  "keywords": ["キーワード1", "キーワード2"],
+  "context": "このジャンルに基づくコンテキスト説明"
+}`;
 
   try {
     const response = await callGemini(fullPrompt, apiKey);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const result = JSON.parse(jsonMatch[0]);
-      // ジャンルが有効なものか確認
+      // ジャンルの検証
       if (!GENRE_LIST.includes(result.primary)) {
         result.primary = '日常会話';
       }

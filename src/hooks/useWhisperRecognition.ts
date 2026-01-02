@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AudioRecorder, transcribeAudio, OPENAI_API_KEY } from '../lib/whisper';
+import { correctRealtimeText, ConversationGenre, HARDCODED_API_KEY } from '../lib/gemini';
 
 export type RecognitionState = 'idle' | 'starting' | 'listening' | 'processing' | 'stopping';
 
@@ -115,6 +116,14 @@ function isHallucination(text: string): boolean {
   return false;
 }
 
+// リアルタイム整形結果の型
+export interface RealtimeTextResult {
+  correctedText: string;
+  originalText: string;
+  wasModified: boolean;
+  detectedProperNouns: string[];
+}
+
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
     apiKey = OPENAI_API_KEY,
@@ -132,20 +141,40 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [isClipping, setIsClipping] = useState<boolean>(false);
   const [currentGain, setCurrentGain] = useState<number>(50); // 初期値は最大
   const [processingStatus, setProcessingStatus] = useState<string>('');
+  
+  // リアルタイム整形用のコンテキスト
+  const [conversationContext, setConversationContext] = useState<string>('');
+  const [currentGenre, setCurrentGenre] = useState<ConversationGenre | null>(null);
+  
+  // リアルタイム整形結果のコールバック
+  const [onRealtimeCorrection, setOnRealtimeCorrection] = useState<((result: RealtimeTextResult) => void) | null>(null);
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
+  const pendingOriginalTextRef = useRef<string>(''); // 整形前のテキスト
   const apiKeyRef = useRef<string>(apiKey);
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
   const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
+  const conversationContextRef = useRef<string>('');
+  const currentGenreRef = useRef<ConversationGenre | null>(null);
 
   // APIキーをrefで保持（再レンダリングを防ぐ）
   useEffect(() => {
     apiKeyRef.current = apiKey;
   }, [apiKey]);
+
+  // コンテキストをrefで保持
+  useEffect(() => {
+    conversationContextRef.current = conversationContext;
+  }, [conversationContext]);
+
+  // ジャンルをrefで保持
+  useEffect(() => {
+    currentGenreRef.current = currentGenre;
+  }, [currentGenre]);
 
   // サポート確認
   useEffect(() => {
@@ -163,6 +192,23 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     if (recorderRef.current) {
       recorderRef.current.setGain(value);
     }
+  }, []);
+
+  // コンテキスト更新関数
+  const updateContext = useCallback((context: string) => {
+    setConversationContext(context);
+    conversationContextRef.current = context;
+  }, []);
+
+  // ジャンル更新関数
+  const updateGenre = useCallback((genre: ConversationGenre | null) => {
+    setCurrentGenre(genre);
+    currentGenreRef.current = genre;
+  }, []);
+
+  // リアルタイム整形コールバック設定
+  const setRealtimeCorrectionCallback = useCallback((callback: ((result: RealtimeTextResult) => void) | null) => {
+    setOnRealtimeCorrection(() => callback);
   }, []);
 
   // 定期的に音声を送信して文字起こし
@@ -220,19 +266,68 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       console.log('[Whisper] Result:', result);
       
       if (result.text && result.text.trim()) {
-        const newText = result.text.trim();
+        const rawText = result.text.trim();
         
         // 幻覚フレーズをフィルタリング
-        if (isHallucination(newText)) {
-          console.log('[Whisper] Filtered hallucination:', newText);
+        if (isHallucination(rawText)) {
+          console.log('[Whisper] Filtered hallucination:', rawText);
           setProcessingStatus('ノイズ除去（幻覚フィルタ）');
         } else {
-          // リアルタイム欄に追加
-          pendingTextRef.current = pendingTextRef.current 
-            ? pendingTextRef.current + ' ' + newText 
-            : newText;
-          setInterimTranscript(pendingTextRef.current);
-          setProcessingStatus('認識成功: ' + newText.substring(0, 20) + '...');
+          // Geminiでリアルタイム整形
+          setProcessingStatus('Geminiで整形中...');
+          console.log('[Whisper] Correcting with Gemini...');
+          
+          try {
+            const correctionResult = await correctRealtimeText(
+              rawText,
+              conversationContextRef.current,
+              currentGenreRef.current,
+              HARDCODED_API_KEY
+            );
+            
+            console.log('[Whisper] Correction result:', correctionResult);
+            
+            const correctedText = correctionResult.correctedText;
+            
+            // リアルタイム欄に整形後のテキストを追加
+            pendingTextRef.current = pendingTextRef.current 
+              ? pendingTextRef.current + ' ' + correctedText 
+              : correctedText;
+            
+            // 整形前のテキストも保持
+            pendingOriginalTextRef.current = pendingOriginalTextRef.current
+              ? pendingOriginalTextRef.current + ' ' + rawText
+              : rawText;
+            
+            setInterimTranscript(pendingTextRef.current);
+            
+            if (correctionResult.wasModified) {
+              setProcessingStatus(`整形完了: ${rawText} → ${correctedText}`);
+            } else {
+              setProcessingStatus('認識成功: ' + correctedText.substring(0, 20) + '...');
+            }
+            
+            // コールバックで固有名詞情報を通知
+            if (onRealtimeCorrection) {
+              onRealtimeCorrection({
+                correctedText: correctedText,
+                originalText: rawText,
+                wasModified: correctionResult.wasModified,
+                detectedProperNouns: correctionResult.detectedProperNouns,
+              });
+            }
+          } catch (geminiError) {
+            console.error('[Whisper] Gemini correction error:', geminiError);
+            // Geminiエラー時は生テキストを使用
+            pendingTextRef.current = pendingTextRef.current 
+              ? pendingTextRef.current + ' ' + rawText 
+              : rawText;
+            pendingOriginalTextRef.current = pendingOriginalTextRef.current
+              ? pendingOriginalTextRef.current + ' ' + rawText
+              : rawText;
+            setInterimTranscript(pendingTextRef.current);
+            setProcessingStatus('認識成功（整形スキップ）: ' + rawText.substring(0, 20) + '...');
+          }
         }
       } else {
         setProcessingStatus('音声なし（無音）');
@@ -248,15 +343,17 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     } finally {
       isProcessingRef.current = false;
     }
-  }, [silenceThreshold]);
+  }, [silenceThreshold, onRealtimeCorrection]);
 
   // 一定時間ごとにリアルタイム欄から会話欄に移動
   const flushToTranscript = useCallback(() => {
     if (pendingTextRef.current && pendingTextRef.current.trim()) {
       const textToFlush = pendingTextRef.current.trim();
+      const originalToFlush = pendingOriginalTextRef.current.trim();
       console.log('[Whisper] Flushing to transcript:', textToFlush);
+      console.log('[Whisper] Original text:', originalToFlush);
       
-      // 会話欄に追加
+      // 会話欄に追加（整形後のテキスト）
       setTranscript((prev) => {
         const newTranscript = prev ? prev + '\n' + textToFlush : textToFlush;
         console.log('[Whisper] New transcript:', newTranscript);
@@ -265,6 +362,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       
       // リアルタイム欄をクリア
       pendingTextRef.current = '';
+      pendingOriginalTextRef.current = '';
       setInterimTranscript('');
     }
   }, []);
@@ -285,6 +383,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setError(null);
     setState('starting');
     pendingTextRef.current = '';
+    pendingOriginalTextRef.current = '';
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
     setProcessingStatus('開始中...');
@@ -358,9 +457,31 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         try {
           const result = await transcribeAudio(finalBlob, apiKeyRef.current);
           if (result.text && result.text.trim() && !isHallucination(result.text.trim())) {
-            pendingTextRef.current = pendingTextRef.current 
-              ? pendingTextRef.current + ' ' + result.text.trim() 
-              : result.text.trim();
+            const rawText = result.text.trim();
+            
+            // 最終テキストもGeminiで整形
+            try {
+              const correctionResult = await correctRealtimeText(
+                rawText,
+                conversationContextRef.current,
+                currentGenreRef.current,
+                HARDCODED_API_KEY
+              );
+              
+              pendingTextRef.current = pendingTextRef.current 
+                ? pendingTextRef.current + ' ' + correctionResult.correctedText 
+                : correctionResult.correctedText;
+              pendingOriginalTextRef.current = pendingOriginalTextRef.current
+                ? pendingOriginalTextRef.current + ' ' + rawText
+                : rawText;
+            } catch {
+              pendingTextRef.current = pendingTextRef.current 
+                ? pendingTextRef.current + ' ' + rawText 
+                : rawText;
+              pendingOriginalTextRef.current = pendingOriginalTextRef.current
+                ? pendingOriginalTextRef.current + ' ' + rawText
+                : rawText;
+            }
           }
         } catch (e) {
           console.error('[Whisper] Final transcription error:', e);
@@ -386,6 +507,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setTranscript('');
     setInterimTranscript('');
     pendingTextRef.current = '';
+    pendingOriginalTextRef.current = '';
+    setConversationContext('');
+    conversationContextRef.current = '';
   }, []);
 
   // クリーンアップ
@@ -419,5 +543,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     startListening,
     stopListening,
     clearTranscript,
+    // 新しい機能
+    updateContext,
+    updateGenre,
+    setRealtimeCorrectionCallback,
   };
 }
