@@ -5,7 +5,7 @@ import { AssemblyAIService, TranscriptionResult } from '../lib/assemblyai';
 
 interface UseAssemblyAIOptions {
   apiKey?: string;
-  onTranscript?: (text: string, isFinal: boolean) => void;
+  onTranscript?: (text: string, isFinal: boolean, speaker?: string) => void;
   onError?: (error: string) => void;
 }
 
@@ -16,6 +16,7 @@ export function useAssemblyAI(options: UseAssemblyAIOptions = {}) {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [audioChunksSent, setAudioChunksSent] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
   
   const serviceRef = useRef<AssemblyAIService | null>(null);
   const optionsRef = useRef(options);
@@ -34,12 +35,14 @@ export function useAssemblyAI(options: UseAssemblyAIOptions = {}) {
         if (result.transcript && result.transcript.trim()) {
           setTranscript(prev => prev ? prev + '\n' + result.transcript : result.transcript);
           setInterimTranscript('');
-          optionsRef.current.onTranscript?.(result.transcript, true);
+          setAudioLevel(50); // 音声検出時はレベルを上げる
+          optionsRef.current.onTranscript?.(result.transcript, true, undefined);
         }
       } else if (result.type === 'PartialTranscript') {
         // 暫定テキスト
         setInterimTranscript(result.transcript);
-        optionsRef.current.onTranscript?.(result.transcript, false);
+        setAudioLevel(result.transcript ? 30 : 0);
+        optionsRef.current.onTranscript?.(result.transcript, false, undefined);
       } else if (result.type === 'Error') {
         setError(result.error || 'Unknown error');
         optionsRef.current.onError?.(result.error || 'Unknown error');
@@ -121,6 +124,7 @@ export function useAssemblyAI(options: UseAssemblyAIOptions = {}) {
     interimTranscript,
     error,
     audioChunksSent,
+    audioLevel,
     isSupported,
     startListening,
     startRecording: startListening,
