@@ -1,6 +1,6 @@
 // AssemblyAI リアルタイム音声認識
 
-export const ASSEMBLYAI_API_KEY = '66c59c2617694f7587be1c51e4739428';
+export const ASSEMBLYAI_API_KEY = import.meta.env.VITE_ASSEMBLYAI_API_KEY || '';
 
 // 話者情報付きの認識結果
 export interface SpeakerTranscript {
