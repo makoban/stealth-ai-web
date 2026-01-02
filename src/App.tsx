@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
-import { useAssemblyAI } from './hooks/useAssemblyAI';
+// AssemblyAIは日本語非対応のため削除済み
 import {
   detectProperNounsExtended,
   investigateProperNoun,
@@ -22,13 +22,12 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.47';
+const APP_VERSION = 'v1.48';
 
 // 音声認識エンジンの種類
-type SpeechEngine = 'whisper' | 'assemblyai';
+type SpeechEngine = 'whisper';
 const ENGINE_LABELS: Record<SpeechEngine, string> = {
   whisper: 'Whisper',
-  assemblyai: 'AssemblyAI (日本語非対応)',
 };
 
 // フィルタリングする不要なテキスト
@@ -86,11 +85,8 @@ interface SummaryEntry {
 type ExpandedSection = 'none' | 'conversation' | 'summary' | 'lookup';
 
 export default function App() {
-  // 音声認識エンジン選択
-  const [speechEngine, setSpeechEngine] = useState<SpeechEngine>(() => {
-    const saved = localStorage.getItem('speech_engine');
-    return (saved as SpeechEngine) || 'assemblyai'; // デフォルトはAssemblyAI
-  });
+  // 音声認識エンジン選択（現在はWhisperのみ）
+  const [speechEngine] = useState<SpeechEngine>('whisper');
 
   // OpenAI APIキー（環境変数から取得）
   const openaiApiKey = OPENAI_API_KEY;
@@ -113,61 +109,28 @@ export default function App() {
     intervalMs: 4000,
   });
 
-  // AssemblyAI用の状態
-  const [assemblyTranscript, setAssemblyTranscript] = useState('');
-  const [assemblyInterim, setAssemblyInterim] = useState('');
-  const [currentSpeaker, setCurrentSpeaker] = useState<string | undefined>();
-
-  // AssemblyAI
-  const assemblyAI = useAssemblyAI({
-    onTranscript: (text, isFinal, speaker) => {
-      if (isFinal) {
-        setAssemblyTranscript(prev => prev + (prev ? ' ' : '') + text);
-        setAssemblyInterim('');
-        setCurrentSpeaker(speaker);
-      } else {
-        setAssemblyInterim(text);
-      }
-    },
-  });
-
-  // 統合された音声認識状態
-  const transcript = speechEngine === 'whisper' ? whisper.transcript : assemblyTranscript;
-  const interimTranscript = speechEngine === 'whisper' ? whisper.interimTranscript : assemblyInterim;
-  const isListening = speechEngine === 'whisper' ? whisper.isListening : assemblyAI.isListening;
-  const audioLevel = speechEngine === 'whisper' ? whisper.audioLevel : assemblyAI.audioLevel / 100;
-  const isClipping = speechEngine === 'whisper' ? whisper.isClipping : false;
-  const isSpeechDetected = speechEngine === 'whisper' ? whisper.isSpeechDetected : assemblyAI.audioLevel > 10;
+  // Whisperの音声認識状態
+  const transcript = whisper.transcript;
+  const interimTranscript = whisper.interimTranscript;
+  const isListening = whisper.isListening;
+  const audioLevel = whisper.audioLevel;
+  const isClipping = whisper.isClipping;
+  const isSpeechDetected = whisper.isSpeechDetected;
   const isSupported = true;
-  const speechError = speechEngine === 'whisper' ? whisper.error : assemblyAI.error;
+  const speechError = whisper.error;
 
-  // 統合された操作関数
-  const startListening = useCallback(async () => {
-    if (speechEngine === 'whisper') {
-      whisper.startListening();
-    } else {
-      setAssemblyTranscript('');
-      setAssemblyInterim('');
-      await assemblyAI.startListening();
-    }
-  }, [speechEngine, whisper, assemblyAI]);
+  // Whisperの操作関数
+  const startListening = useCallback(() => {
+    whisper.startListening();
+  }, [whisper]);
 
   const stopListening = useCallback(() => {
-    if (speechEngine === 'whisper') {
-      whisper.stopListening();
-    } else {
-      assemblyAI.stopListening();
-    }
-  }, [speechEngine, whisper, assemblyAI]);
+    whisper.stopListening();
+  }, [whisper]);
 
   const clearTranscript = useCallback(() => {
-    if (speechEngine === 'whisper') {
-      whisper.clearTranscript();
-    } else {
-      setAssemblyTranscript('');
-      setAssemblyInterim('');
-    }
-  }, [speechEngine, whisper]);
+    whisper.clearTranscript();
+  }, [whisper]);
 
   const setGain = whisper.setGain;
 
@@ -490,7 +453,7 @@ export default function App() {
             <button onClick={(e) => { e.stopPropagation(); resetAllUsageStats(); setApiUsage(getTotalApiUsageStats()); }} className="reset-btn">↻</button>
           </div>
           <span className="engine-badge" onClick={() => setShowSettings(true)}>
-            {speechEngine === 'assemblyai' ? '🏆' : '🐬'} {ENGINE_LABELS[speechEngine]}
+            🐬 {ENGINE_LABELS[speechEngine]}
           </span>
           {currentGenre && currentGenre.confidence > 0.5 && (
             <span className="genre-badge" title={`キーワード: ${currentGenre.keywords.join(', ')}\n${currentGenre.context}`}>
@@ -517,9 +480,7 @@ export default function App() {
         {/* リアルタイム欄 */}
         <section className="section realtime-section">
           <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
-            {currentSpeaker && speechEngine === 'assemblyai' && (
-              <span className="speaker-label">話者{currentSpeaker}: </span>
-            )}
+
             {interimTranscript || (isListening ? '音声を待機中...' : '会話解析を開始してください')}
           </div>
         </section>
@@ -705,26 +666,8 @@ export default function App() {
             
             <div className="settings-section">
               <h3>🎯 音声認識エンジン</h3>
-              <div className="engine-selector">
-                <button
-                  className={`engine-btn ${speechEngine === 'assemblyai' ? 'active' : ''}`}
-                  onClick={() => setSpeechEngine('assemblyai')}
-                  disabled={isListening}
-                >
-                  🏆 AssemblyAI（最高品質）
-                </button>
-                <button
-                  className={`engine-btn ${speechEngine === 'whisper' ? 'active' : ''}`}
-                  onClick={() => setSpeechEngine('whisper')}
-                  disabled={isListening}
-                >
-                  🐬 Whisper
-                </button>
-              </div>
               <p className="engine-description">
-                {speechEngine === 'assemblyai' 
-                  ? '✅ 話者分離対応・最高精度・ノイズ耐性◎' 
-                  : 'ℹ️ 標準品質・ノイズフィルターあり'}
+                🐬 Whisper（OpenAI）- 日本語高精度
               </p>
             </div>
 
