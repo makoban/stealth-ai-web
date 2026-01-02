@@ -2,23 +2,25 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
 import { useAssemblyAI } from './hooks/useAssemblyAI';
 import {
-  detectProperNouns,
+  detectProperNounsWithGenre,
   explainProperNoun,
   summarizeConversation,
-  correctConversation,
+  correctConversationWithGenre,
+  detectConversationGenre,
   getTotalApiUsageStats,
   resetAllUsageStats,
   HARDCODED_API_KEY,
   KnowledgeLevel,
   KNOWLEDGE_LEVEL_LABELS,
   ConversationSummary,
+  ConversationGenre,
   TotalApiUsageStats,
 } from './lib/gemini';
 import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.37';
+const APP_VERSION = 'v1.38';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper' | 'assemblyai';
@@ -166,6 +168,11 @@ export default function App() {
   const [fullConversation, setFullConversation] = useState('');
   const [expandedSection, setExpandedSection] = useState<ExpandedSection>('none');
   const [apiUsage, setApiUsage] = useState<TotalApiUsageStats>(getTotalApiUsageStats());
+  
+  // ジャンル推定
+  const [currentGenre, setCurrentGenre] = useState<ConversationGenre | null>(null);
+  const [isDetectingGenre, setIsDetectingGenre] = useState(false);
+  const lastGenreUpdateRef = useRef<number>(0);
 
   const lastProcessedTranscript = useRef('');
   const conversationSummaryRef = useRef<ConversationSummary | null>(null);
@@ -236,7 +243,38 @@ export default function App() {
     }
   }, []);
 
-  // テキストを処理（修正、固有名詞検出）
+  // ジャンルを推定
+  const updateGenre = useCallback(async (conversation: string) => {
+    // 最後のジャンル更新から10秒以上経過、かつ100文字以上の会話がある場合のみ更新
+    const now = Date.now();
+    if (now - lastGenreUpdateRef.current < 10000) return;
+    if (conversation.length < 100) return;
+    if (isDetectingGenre) return;
+    
+    setIsDetectingGenre(true);
+    lastGenreUpdateRef.current = now;
+    
+    try {
+      const previousGenres = currentGenre 
+        ? [currentGenre.primary, ...currentGenre.secondary]
+        : null;
+      
+      const genre = await detectConversationGenre(
+        conversation,
+        previousGenres,
+        HARDCODED_API_KEY
+      );
+      
+      console.log('[App] Genre detected:', genre);
+      setCurrentGenre(genre);
+    } catch (e) {
+      console.error('Genre detection error:', e);
+    } finally {
+      setIsDetectingGenre(false);
+    }
+  }, [currentGenre, isDetectingGenre]);
+
+  // テキストを処理（修正、固有名詞検出）- ジャンルコンテキスト対応
   const processText = useCallback(async (text: string) => {
     console.log('[App] processText called:', text);
     if (!text.trim()) {
@@ -245,8 +283,8 @@ export default function App() {
     }
 
     try {
-      // 会話を修正
-      const corrected = await correctConversation(text, fullConversation, HARDCODED_API_KEY);
+      // 会話を修正（ジャンルコンテキストを使用）
+      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, HARDCODED_API_KEY);
 
       const entry: ConversationEntry = {
         id: Date.now().toString(),
@@ -258,8 +296,8 @@ export default function App() {
 
       setConversations(prev => [...prev, entry]);
 
-      // 固有名詞を検出（知識レベルに応じて）
-      const nouns = await detectProperNouns(corrected.correctedText, knowledgeLevel, HARDCODED_API_KEY);
+      // 固有名詞を検出（知識レベルとジャンルに応じて）
+      const nouns = await detectProperNounsWithGenre(corrected.correctedText, knowledgeLevel, currentGenre, HARDCODED_API_KEY);
 
       for (const noun of nouns) {
         if (processedWordsRef.current.has(noun.word)) continue;
@@ -288,7 +326,7 @@ export default function App() {
     } catch (e) {
       console.error('Detection error:', e);
     }
-  }, [fullConversation, knowledgeLevel]);
+  }, [fullConversation, knowledgeLevel, currentGenre]);
 
   // transcript変更を監視
   useEffect(() => {
@@ -317,6 +355,7 @@ export default function App() {
           const updated = prev + ' ' + filteredText;
           console.log('[App] fullConversation length:', updated.length);
           updateSummary(updated.trim());
+          updateGenre(updated.trim()); // ジャンル推定も更新
           return updated;
         });
 
@@ -326,7 +365,7 @@ export default function App() {
         });
       }
     }
-  }, [transcript, updateSummary, processText]);
+  }, [transcript, updateSummary, updateGenre, processText]);
 
   // 録音開始/停止
   const toggleRecording = () => {
@@ -354,6 +393,8 @@ export default function App() {
     lastProcessedTranscript.current = '';
     resetAllUsageStats();
     setApiUsage(getTotalApiUsageStats());
+    setCurrentGenre(null); // ジャンルもリセット
+    lastGenreUpdateRef.current = 0;
   };
 
   // 接続状態の色
@@ -393,6 +434,15 @@ export default function App() {
           <span className="engine-badge" onClick={() => setShowSettings(true)}>
             {speechEngine === 'assemblyai' ? '🏆' : '🐬'} {ENGINE_LABELS[speechEngine]}
           </span>
+          {currentGenre && currentGenre.confidence > 0.5 && (
+            <span className="genre-badge" title={`キーワード: ${currentGenre.keywords.join(', ')}\n${currentGenre.context}`}>
+              🎯 {currentGenre.primary}
+              {currentGenre.secondary.length > 0 && <span className="genre-sub">+{currentGenre.secondary.length}</span>}
+            </span>
+          )}
+          {isDetectingGenre && (
+            <span className="genre-badge detecting">🔍 分析中...</span>
+          )}
           <button onClick={() => setShowLevelSelector(true)} className="level-btn">
             📚 {KNOWLEDGE_LEVEL_LABELS[knowledgeLevel]}
           </button>

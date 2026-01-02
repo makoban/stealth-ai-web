@@ -872,6 +872,43 @@
   transform: scale(1.05);
 }
 
+/* ジャンルバッジ */
+.genre-badge {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: help;
+  transition: transform 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.genre-badge:hover {
+  transform: scale(1.05);
+}
+
+.genre-badge.detecting {
+  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  color: #666;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.genre-sub {
+  background: rgba(255, 255, 255, 0.3);
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-size: 0.65rem;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 /* エンジン選択ボタン */
 .engine-selector {
   display: flex;
