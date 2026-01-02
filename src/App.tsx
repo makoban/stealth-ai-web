@@ -16,7 +16,7 @@ import {
 import { OPENAI_API_KEY } from './lib/whisper';
 import './App.css';
 
-const APP_VERSION = 'v1.26';
+const APP_VERSION = 'v1.27';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -66,8 +66,8 @@ export default function App() {
     return saved || OPENAI_API_KEY || '';
   });
   
-  // 音声増幅倍率（自動調整）
-  const [gainValue, setGainValue] = useState<number>(5.0);
+  // 音声増幅倍率（自動調整、初期値は最大）
+  const [gainValue, setGainValue] = useState<number>(10);
 
   const [showSettings, setShowSettings] = useState(false);
 
@@ -122,22 +122,20 @@ export default function App() {
     setGain(gainValue);
   }, [gainValue, setGain]);
 
-  // 増幅倍率の自動調整
+  // 増幅倍率の自動調整（聴こえないときは最大値に）
   useEffect(() => {
     if (!isListening) return;
     
-    // 音声レベルに基づいて自動調整
-    const targetLevel = 0.3; // 目標レベル30%
     const currentLevel = audioLevel;
     
-    if (currentLevel > 0.01) { // 無音でない場合のみ調整
-      if (currentLevel < targetLevel * 0.5 && gainValue < 10) {
-        // 音が小さすぎる場合は増幅を上げる
-        setGainValue(prev => Math.min(prev + 0.2, 10));
-      } else if (currentLevel > targetLevel * 1.5 && gainValue > 1) {
-        // 音が大きすぎる場合は増幅を下げる
-        setGainValue(prev => Math.max(prev - 0.2, 1));
+    if (currentLevel < 0.02) {
+      // ほぼ無音の場合は増幅を最大に
+      if (gainValue < 10) {
+        setGainValue(10);
       }
+    } else if (currentLevel > 0.6 && gainValue > 3) {
+      // 音が大きすぎる場合のみ少し下げる
+      setGainValue(prev => Math.max(prev - 0.5, 3));
     }
   }, [audioLevel, isListening, gainValue]);
 
