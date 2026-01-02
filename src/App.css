@@ -1053,3 +1053,116 @@
   font-weight: 600;
   margin-right: 8px;
 }
+
+
+/* フッター */
+.footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--surface-elevated);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* 録音ボタン */
+.record-btn {
+  padding: 14px 32px;
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(255, 20, 147, 0.4);
+}
+
+.record-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.5);
+}
+
+.record-btn.recording {
+  background: linear-gradient(135deg, var(--error) 0%, #FF8080 100%);
+  box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+  animation: pulse-recording 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-recording {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+  }
+  50% {
+    transform: scale(1.03);
+    box-shadow: 0 6px 25px rgba(255, 107, 107, 0.6);
+  }
+}
+
+/* フッターのリセットボタン */
+.footer .reset-btn {
+  padding: 12px 24px;
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.footer .reset-btn:hover {
+  background: var(--error);
+  color: white;
+  border-color: var(--error);
+}
+
+/* Excel出力ボタン */
+.export-btn {
+  padding: 12px 24px;
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  background: linear-gradient(135deg, #217346 0%, #185C37 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(33, 115, 70, 0.3);
+}
+
+.export-btn:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(33, 115, 70, 0.4);
+}
+
+.export-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 480px) {
+  .footer {
+    padding: 12px;
+    gap: 10px;
+  }
+  
+  .record-btn {
+    padding: 12px 24px;
+    font-size: 14px;
+  }
+  
+  .footer .reset-btn,
+  .export-btn {
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+}
