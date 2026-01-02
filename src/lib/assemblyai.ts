@@ -1,294 +1,391 @@
-// AssemblyAI リアルタイム音声認識 (v3 API)
+/**
+ * AssemblyAI Real-time Transcription Service
+ * Using v3 WebSocket API with AudioWorklet
+ * 
+ * 公式実装参考: https://github.com/AssemblyAI/realtime-transcription-browser-js-example
+ */
 
-// 話者情報付きの認識結果
-export interface SpeakerTranscript {
-  text: string;
-  speaker: string;  // "A", "B", "C" など
-  confidence: number;
-  timestamp: Date;
+export interface AssemblyAIConfig {
+  apiKey: string;
+  sampleRate?: number;
+  language?: string;
 }
 
-// AssemblyAI WebSocket接続クラス (v3 API対応)
-export class AssemblyAIRealtime {
-  private socket: WebSocket | null = null;
-  private audioContext: AudioContext | null = null;
-  private stream: MediaStream | null = null;
-  private isConnected = false;
-  private processor: ScriptProcessorNode | null = null;
-  private audioDataSent = false;
-  private actualSampleRate = 48000; // 実際のサンプルレート
-  
-  // コールバック
-  onTranscript: ((text: string, isFinal: boolean, speaker?: string) => void) | null = null;
-  onError: ((error: string) => void) | null = null;
-  onAudioLevel: ((level: number) => void) | null = null;
+export interface TranscriptionResult {
+  type: 'Turn' | 'PartialTranscript' | 'FinalTranscript' | 'SessionBegins' | 'Error';
+  turn_order?: number;
+  transcript: string;
+  confidence?: number;
+  session_id?: string;
+  error?: string;
+}
 
-  // 一時トークンをバックエンドプロキシ経由で取得
+export type TranscriptionCallback = (result: TranscriptionResult) => void;
+export type ErrorCallback = (error: Error) => void;
+export type StatusCallback = (status: 'connecting' | 'connected' | 'disconnected' | 'error') => void;
+
+export class AssemblyAIService {
+  private ws: WebSocket | null = null;
+  private audioContext: AudioContext | null = null;
+  private audioWorkletNode: AudioWorkletNode | null = null;
+  private mediaStream: MediaStream | null = null;
+  private source: MediaStreamAudioSourceNode | null = null;
+  
+  private config: AssemblyAIConfig;
+  private onTranscription: TranscriptionCallback | null = null;
+  private onError: ErrorCallback | null = null;
+  private onStatus: StatusCallback | null = null;
+  
+  private isRecording = false;
+  private turns: Map<number, string> = new Map();
+  private audioChunksSent = 0;
+
+  constructor(config: AssemblyAIConfig) {
+    this.config = {
+      sampleRate: 16000,
+      language: 'ja',
+      ...config
+    };
+    console.log('[AssemblyAI] Service created with config:', {
+      sampleRate: this.config.sampleRate,
+      language: this.config.language,
+      hasApiKey: !!this.config.apiKey
+    });
+  }
+
+  /**
+   * Set callback for transcription results
+   */
+  setOnTranscription(callback: TranscriptionCallback): void {
+    this.onTranscription = callback;
+  }
+
+  /**
+   * Set callback for errors
+   */
+  setOnError(callback: ErrorCallback): void {
+    this.onError = callback;
+  }
+
+  /**
+   * Set callback for status changes
+   */
+  setOnStatus(callback: StatusCallback): void {
+    this.onStatus = callback;
+  }
+
+  /**
+   * Get temporary token from AssemblyAI API
+   * Can use direct API call or server proxy
+   */
   private async getTemporaryToken(): Promise<string> {
-    console.log('[AssemblyAI] Requesting token from proxy...');
-    // プロキシエンドポイントを使用（CORSを回避）
-    const response = await fetch('/api/assemblyai/token', {
-      method: 'GET',
+    console.log('[AssemblyAI] Getting temporary token...');
+    
+    // Try server proxy first (to hide API key from client)
+    try {
+      const proxyResponse = await fetch('/api/assemblyai/token', {
+        method: 'GET',
+      });
+      
+      if (proxyResponse.ok) {
+        const proxyData = await proxyResponse.json();
+        if (proxyData.token) {
+          console.log('[AssemblyAI] Token obtained via server proxy');
+          return proxyData.token;
+        }
+      }
+    } catch (e) {
+      console.warn('[AssemblyAI] Server proxy failed, trying direct API:', e);
+    }
+    
+    // Fallback to direct API call if server proxy fails
+    if (!this.config.apiKey) {
+      throw new Error('AssemblyAI API key is required');
+    }
+    
+    const response = await fetch('https://api.assemblyai.com/v2/realtime/token', {
+      method: 'POST',
+      headers: {
+        'Authorization': this.config.apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        expires_in: 3600 // Token valid for 1 hour
+      })
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('[AssemblyAI] Token error:', response.status, errorData);
-      throw new Error(`Failed to get token: ${response.status} - ${errorData.error || 'Unknown error'}`);
+      const errorText = await response.text();
+      console.error('[AssemblyAI] Token request failed:', response.status, errorText);
+      throw new Error(`Failed to get AssemblyAI token: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log('[AssemblyAI] Token received:', data.token ? 'yes' : 'no');
+    console.log('[AssemblyAI] Token obtained successfully');
     return data.token;
   }
 
-  // リサンプリング関数 (任意のサンプルレートから16kHzへ)
-  private resample(inputData: Float32Array, inputSampleRate: number, outputSampleRate: number): Float32Array {
-    const ratio = inputSampleRate / outputSampleRate;
-    const outputLength = Math.floor(inputData.length / ratio);
-    const output = new Float32Array(outputLength);
+  /**
+   * Initialize microphone with AudioWorklet (16kHz)
+   */
+  private async initializeMicrophone(): Promise<void> {
+    console.log('[AssemblyAI] Initializing microphone...');
     
-    for (let i = 0; i < outputLength; i++) {
-      const srcIndex = i * ratio;
-      const srcIndexFloor = Math.floor(srcIndex);
-      const srcIndexCeil = Math.min(srcIndexFloor + 1, inputData.length - 1);
-      const t = srcIndex - srcIndexFloor;
-      
-      // 線形補間
-      output[i] = inputData[srcIndexFloor] * (1 - t) + inputData[srcIndexCeil] * t;
-    }
-    
-    return output;
-  }
-
-  // Float32 to Int16 PCM変換
-  private float32ToInt16(float32Array: Float32Array): Int16Array {
-    const int16Array = new Int16Array(float32Array.length);
-    for (let i = 0; i < float32Array.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32Array[i]));
-      int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-    return int16Array;
-  }
-
-  // 接続開始
-  async connect(): Promise<void> {
-    try {
-      // 一時トークンを取得
-      const token = await this.getTemporaryToken();
-      console.log('[AssemblyAI] Token obtained, connecting to WebSocket...');
-      
-      // v3 WebSocket接続
-      // tokenをクエリパラメータとして渡す
-      const params = new URLSearchParams({
-        sample_rate: '16000',
-        token: token,
-        format_turns: 'true',
-        speech_model: 'universal-streaming-multilingual', // 日本語対応
-        language_detection: 'true', // 言語自動検出
-      });
-      
-      const wsUrl = `wss://streaming.assemblyai.com/v3/ws?${params.toString()}`;
-      console.log('[AssemblyAI] Connecting to:', wsUrl.replace(token, 'TOKEN_HIDDEN'));
-      
-      this.socket = new WebSocket(wsUrl);
-
-      // WebSocket接続待機
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('WebSocket connection timeout'));
-        }, 10000);
-
-        this.socket!.onopen = () => {
-          clearTimeout(timeout);
-          console.log('[AssemblyAI] WebSocket connected');
-          this.isConnected = true;
-          resolve();
-        };
-
-        this.socket!.onerror = (error) => {
-          clearTimeout(timeout);
-          console.error('[AssemblyAI] WebSocket error:', error);
-          reject(new Error('WebSocket connection error'));
-        };
-      });
-
-      this.socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('[AssemblyAI] Message received:', data.type, data);
-          
-          if (data.type === 'Begin') {
-            // セッション開始確認
-            console.log('[AssemblyAI] Session started:', data.id);
-          } else if (data.type === 'Turn') {
-            // ターンベースの認識結果
-            if (data.transcript && this.onTranscript) {
-              const isFinal = data.end_of_turn === true;
-              console.log('[AssemblyAI] Transcript:', data.transcript, 'Final:', isFinal);
-              this.onTranscript(data.transcript, isFinal, data.speaker);
-            }
-          } else if (data.type === 'Termination') {
-            console.log('[AssemblyAI] Session terminated:', data.audio_duration_seconds, 'seconds');
-          } else if (data.error) {
-            console.error('[AssemblyAI] Error:', data.error);
-            if (this.onError) {
-              this.onError(data.error);
-            }
-          }
-        } catch (e) {
-          console.error('[AssemblyAI] Failed to parse message:', e, event.data);
-        }
-      };
-
-      this.socket.onclose = (event) => {
-        console.log('[AssemblyAI] WebSocket closed:', event.code, event.reason);
-        this.isConnected = false;
-        
-        // 異常終了の場合はエラーを通知
-        if (event.code !== 1000 && event.code !== 1005) {
-          if (this.onError) {
-            this.onError(`Connection closed: ${event.code} ${event.reason}`);
-          }
-        }
-      };
-
-      // マイク入力を開始
-      await this.startMicrophone();
-
-    } catch (error) {
-      console.error('[AssemblyAI] Connection error:', error);
-      if (this.onError) {
-        this.onError(String(error));
-      }
-      throw error;
-    }
-  }
-
-  // マイク入力を開始
-  private async startMicrophone(): Promise<void> {
-    console.log('[AssemblyAI] Starting microphone...');
-    
-    // マイクストリームを取得（サンプルレートは指定しない - デバイスのネイティブレートを使用）
-    this.stream = await navigator.mediaDevices.getUserMedia({
+    // Request microphone permission
+    this.mediaStream = await navigator.mediaDevices.getUserMedia({ 
       audio: {
         channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true,
-      },
+        autoGainControl: true
+      } 
     });
+    console.log('[AssemblyAI] Microphone permission granted');
 
-    console.log('[AssemblyAI] Microphone stream obtained');
+    // Create AudioContext with 16kHz sample rate
+    // Note: Some browsers may not support 16kHz, will fall back to default
+    try {
+      this.audioContext = new AudioContext({
+        sampleRate: this.config.sampleRate!,
+        latencyHint: 'interactive'
+      });
+      console.log('[AssemblyAI] AudioContext created with sample rate:', this.audioContext.sampleRate);
+    } catch (e) {
+      console.warn('[AssemblyAI] Could not create AudioContext with 16kHz, using default');
+      this.audioContext = new AudioContext({
+        latencyHint: 'interactive'
+      });
+      console.log('[AssemblyAI] AudioContext created with default sample rate:', this.audioContext.sampleRate);
+    }
 
-    // AudioContextを作成（サンプルレートは指定しない - デバイスのネイティブレートを使用）
-    this.audioContext = new AudioContext();
-    this.actualSampleRate = this.audioContext.sampleRate;
-    console.log('[AssemblyAI] Actual sample rate:', this.actualSampleRate);
-    
-    const source = this.audioContext.createMediaStreamSource(this.stream);
-    
-    // 音声レベル監視
-    const analyser = this.audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    
-    const checkLevel = () => {
-      if (!this.isConnected) return;
-      
-      analyser.getByteFrequencyData(dataArray);
-      const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      const level = Math.min(100, (average / 128) * 100);
-      
-      if (this.onAudioLevel) {
-        this.onAudioLevel(level);
-      }
-      
-      requestAnimationFrame(checkLevel);
-    };
-    checkLevel();
+    // Load AudioWorklet processor
+    try {
+      await this.audioContext.audioWorklet.addModule('/audio-processor.js');
+      console.log('[AssemblyAI] AudioWorklet module loaded');
+    } catch (error) {
+      console.error('[AssemblyAI] Failed to load AudioWorklet module:', error);
+      throw new Error('AudioWorklet not supported in this browser');
+    }
 
-    // ScriptProcessorで音声データを送信
-    // バッファサイズを大きくして安定性を向上
-    this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-    source.connect(this.processor);
-    this.processor.connect(this.audioContext.destination);
+    // Create source from media stream
+    this.source = this.audioContext.createMediaStreamSource(this.mediaStream);
 
-    let audioChunkCount = 0;
-    
-    this.processor.onaudioprocess = (event) => {
-      if (!this.isConnected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
+    // Create AudioWorklet node
+    this.audioWorkletNode = new AudioWorkletNode(this.audioContext, 'audio-processor');
+    console.log('[AssemblyAI] AudioWorklet node created');
 
-      const inputData = event.inputBuffer.getChannelData(0);
-      
-      // 実際のサンプルレートから16kHzにリサンプリング
-      const resampledData = this.resample(inputData, this.actualSampleRate, 16000);
-      
-      // Float32 to Int16 PCM変換
-      const pcmData = this.float32ToInt16(resampledData);
+    // Connect nodes
+    this.source.connect(this.audioWorkletNode);
+    // Don't connect to destination to avoid feedback
+    // this.audioWorkletNode.connect(this.audioContext.destination);
 
-      // バイナリデータとして送信（v3 APIは bytes 形式を期待）
-      this.socket.send(pcmData.buffer);
-      
-      audioChunkCount++;
-      if (audioChunkCount % 50 === 0) {
-        console.log('[AssemblyAI] Audio chunks sent:', audioChunkCount, 'resampled from', this.actualSampleRate, 'to 16000');
-      }
-      
-      if (!this.audioDataSent) {
-        this.audioDataSent = true;
-        console.log('[AssemblyAI] First audio data sent, original rate:', this.actualSampleRate, 'resampled to 16000');
-      }
-    };
-    
-    console.log('[AssemblyAI] Audio processing started with resampling');
-  }
-
-  // 切断
-  disconnect(): void {
-    console.log('[AssemblyAI] Disconnecting...');
-    this.isConnected = false;
-
-    if (this.socket) {
-      // v3 API: セッション終了メッセージを送信
-      if (this.socket.readyState === WebSocket.OPEN) {
-        try {
-          this.socket.send(JSON.stringify({ type: 'Terminate' }));
-        } catch (e) {
-          console.error('[AssemblyAI] Error sending terminate:', e);
+    // Handle audio data from worklet
+    this.audioWorkletNode.port.onmessage = (event) => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN && event.data.audio_data) {
+        // Send audio data as binary (ArrayBuffer)
+        const audioData = event.data.audio_data;
+        this.ws.send(audioData.buffer);
+        this.audioChunksSent++;
+        
+        // Log every 50 chunks
+        if (this.audioChunksSent % 50 === 0) {
+          console.log(`[AssemblyAI] Audio chunks sent: ${this.audioChunksSent}`);
         }
       }
-      this.socket.close();
-      this.socket = null;
+    };
+
+    console.log('[AssemblyAI] Microphone initialized successfully');
+  }
+
+  /**
+   * Start real-time transcription
+   */
+  async start(): Promise<void> {
+    if (this.isRecording) {
+      console.warn('[AssemblyAI] Already recording');
+      return;
     }
 
-    if (this.processor) {
-      this.processor.disconnect();
-      this.processor = null;
+    try {
+      this.onStatus?.('connecting');
+      this.audioChunksSent = 0;
+      
+      // Get temporary token
+      const token = await this.getTemporaryToken();
+
+      // Initialize microphone
+      await this.initializeMicrophone();
+
+      // Connect to WebSocket (v3 API)
+      // Using formatted_finals=true to get complete turns
+      const endpoint = `wss://streaming.assemblyai.com/v3/ws?sample_rate=${this.config.sampleRate}&formatted_finals=true&token=${token}`;
+      console.log('[AssemblyAI] Connecting to WebSocket...');
+      
+      this.ws = new WebSocket(endpoint);
+
+      this.ws.onopen = () => {
+        console.log('[AssemblyAI] WebSocket connected');
+        this.isRecording = true;
+        this.onStatus?.('connected');
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          console.log('[AssemblyAI] Message received:', msg.type, msg);
+
+          if (msg.type === 'Turn') {
+            const { turn_order, transcript } = msg;
+            if (transcript && transcript.trim()) {
+              this.turns.set(turn_order, transcript);
+              console.log(`[AssemblyAI] Turn ${turn_order}: "${transcript}"`);
+              
+              this.onTranscription?.({
+                type: 'Turn',
+                turn_order,
+                transcript
+              });
+            }
+          } else if (msg.type === 'PartialTranscript') {
+            const text = msg.text || '';
+            if (text.trim()) {
+              this.onTranscription?.({
+                type: 'PartialTranscript',
+                transcript: text
+              });
+            }
+          } else if (msg.type === 'FinalTranscript') {
+            const text = msg.text || '';
+            if (text.trim()) {
+              this.onTranscription?.({
+                type: 'FinalTranscript',
+                transcript: text,
+                confidence: msg.confidence
+              });
+            }
+          } else if (msg.type === 'SessionBegins') {
+            console.log('[AssemblyAI] Session started:', msg.session_id);
+            this.onTranscription?.({
+              type: 'SessionBegins',
+              session_id: msg.session_id,
+              transcript: ''
+            });
+          } else if (msg.type === 'Error') {
+            console.error('[AssemblyAI] Error from server:', msg.error);
+            this.onTranscription?.({
+              type: 'Error',
+              error: msg.error,
+              transcript: ''
+            });
+            this.onError?.(new Error(msg.error));
+          }
+        } catch (error) {
+          console.error('[AssemblyAI] Failed to parse message:', error, event.data);
+        }
+      };
+
+      this.ws.onerror = (event) => {
+        console.error('[AssemblyAI] WebSocket error:', event);
+        this.onError?.(new Error('WebSocket connection error'));
+        this.onStatus?.('error');
+      };
+
+      this.ws.onclose = (event) => {
+        console.log('[AssemblyAI] WebSocket closed:', event.code, event.reason);
+        this.isRecording = false;
+        this.onStatus?.('disconnected');
+      };
+
+    } catch (error) {
+      console.error('[AssemblyAI] Start error:', error);
+      this.onError?.(error instanceof Error ? error : new Error(String(error)));
+      this.onStatus?.('error');
+      throw error;
+    }
+  }
+
+  /**
+   * Stop real-time transcription
+   */
+  async stop(): Promise<void> {
+    console.log('[AssemblyAI] Stopping... Audio chunks sent:', this.audioChunksSent);
+
+    // Send terminate message
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({ type: 'Terminate' }));
+        console.log('[AssemblyAI] Terminate message sent');
+      } catch (e) {
+        console.warn('[AssemblyAI] Failed to send terminate:', e);
+      }
+      this.ws.close();
+    }
+    this.ws = null;
+
+    // Stop AudioWorklet
+    if (this.audioWorkletNode) {
+      this.audioWorkletNode.disconnect();
+      this.audioWorkletNode = null;
     }
 
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
-      this.stream = null;
+    // Stop source
+    if (this.source) {
+      this.source.disconnect();
+      this.source = null;
     }
 
+    // Close AudioContext
     if (this.audioContext) {
-      this.audioContext.close();
+      await this.audioContext.close();
       this.audioContext = null;
     }
 
-    this.audioDataSent = false;
-    console.log('[AssemblyAI] Disconnected');
+    // Stop media stream
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach(track => track.stop());
+      this.mediaStream = null;
+    }
+
+    this.isRecording = false;
+    this.onStatus?.('disconnected');
+    console.log('[AssemblyAI] Stopped');
   }
 
-  // 接続状態を取得
-  get connected(): boolean {
-    return this.isConnected;
+  /**
+   * Get all transcribed turns as ordered text
+   */
+  getFullTranscript(): string {
+    const orderedTurns = Array.from(this.turns.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([_, text]) => text);
+    return orderedTurns.join('\n');
+  }
+
+  /**
+   * Clear all turns
+   */
+  clearTranscript(): void {
+    this.turns.clear();
+  }
+
+  /**
+   * Check if currently recording
+   */
+  getIsRecording(): boolean {
+    return this.isRecording;
+  }
+
+  /**
+   * Get number of audio chunks sent
+   */
+  getAudioChunksSent(): number {
+    return this.audioChunksSent;
   }
 }
 
-// シングルトンインスタンス
-export const assemblyAI = new AssemblyAIRealtime();
+/**
+ * Create AssemblyAI service instance
+ */
+export function createAssemblyAIService(apiKey: string): AssemblyAIService {
+  return new AssemblyAIService({ apiKey });
+}

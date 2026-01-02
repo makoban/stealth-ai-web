@@ -1,88 +1,131 @@
-// AssemblyAI リアルタイム音声認識フック
+// AssemblyAI リアルタイム音声認識フック (v3 API対応)
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { assemblyAI } from '../lib/assemblyai';
+import { AssemblyAIService, TranscriptionResult } from '../lib/assemblyai';
 
 interface UseAssemblyAIOptions {
-  onTranscript?: (text: string, isFinal: boolean, speaker?: string) => void;
+  apiKey?: string;
+  onTranscript?: (text: string, isFinal: boolean) => void;
   onError?: (error: string) => void;
 }
 
 export function useAssemblyAI(options: UseAssemblyAIOptions = {}) {
   const [isListening, setIsListening] = useState(false);
-  const [audioLevel, setAudioLevel] = useState(0);
-  const [currentText, setCurrentText] = useState('');
+  const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle');
+  const [transcript, setTranscript] = useState('');
+  const [interimTranscript, setInterimTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [audioChunksSent, setAudioChunksSent] = useState(0);
   
+  const serviceRef = useRef<AssemblyAIService | null>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
+  // サービスを初期化
+  useEffect(() => {
+    serviceRef.current = new AssemblyAIService({
+      apiKey: options.apiKey || ''
+    });
+
+    // コールバックを設定
+    serviceRef.current.setOnTranscription((result: TranscriptionResult) => {
+      if (result.type === 'Turn' || result.type === 'FinalTranscript') {
+        // 確定テキスト
+        if (result.transcript && result.transcript.trim()) {
+          setTranscript(prev => prev ? prev + '\n' + result.transcript : result.transcript);
+          setInterimTranscript('');
+          optionsRef.current.onTranscript?.(result.transcript, true);
+        }
+      } else if (result.type === 'PartialTranscript') {
+        // 暫定テキスト
+        setInterimTranscript(result.transcript);
+        optionsRef.current.onTranscript?.(result.transcript, false);
+      } else if (result.type === 'Error') {
+        setError(result.error || 'Unknown error');
+        optionsRef.current.onError?.(result.error || 'Unknown error');
+      }
+    });
+
+    serviceRef.current.setOnError((err: Error) => {
+      setError(err.message);
+      optionsRef.current.onError?.(err.message);
+    });
+
+    serviceRef.current.setOnStatus((newStatus) => {
+      setStatus(newStatus === 'connecting' ? 'connecting' : 
+                newStatus === 'connected' ? 'connected' : 
+                newStatus === 'disconnected' ? 'disconnected' : 'error');
+      if (newStatus === 'connected') {
+        setIsListening(true);
+      } else if (newStatus === 'disconnected' || newStatus === 'error') {
+        setIsListening(false);
+      }
+    });
+
+    return () => {
+      if (serviceRef.current?.getIsRecording()) {
+        serviceRef.current.stop();
+      }
+    };
+  }, [options.apiKey]);
+
   // 接続開始
   const startListening = useCallback(async () => {
+    if (!serviceRef.current) return;
+    
     try {
       setError(null);
-      
-      // コールバックを設定
-      assemblyAI.onTranscript = (text, isFinal, speaker) => {
-        if (isFinal) {
-          setCurrentText('');
-          if (optionsRef.current.onTranscript) {
-            optionsRef.current.onTranscript(text, true, speaker);
-          }
-        } else {
-          setCurrentText(text);
-          if (optionsRef.current.onTranscript) {
-            optionsRef.current.onTranscript(text, false, speaker);
-          }
-        }
-      };
-
-      assemblyAI.onError = (err) => {
-        setError(err);
-        if (optionsRef.current.onError) {
-          optionsRef.current.onError(err);
-        }
-      };
-
-      assemblyAI.onAudioLevel = (level) => {
-        setAudioLevel(level);
-      };
-
-      await assemblyAI.connect();
-      setIsListening(true);
-      
+      setStatus('connecting');
+      await serviceRef.current.start();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
-      if (optionsRef.current.onError) {
-        optionsRef.current.onError(errorMessage);
-      }
+      setStatus('error');
+      optionsRef.current.onError?.(errorMessage);
     }
   }, []);
 
   // 接続停止
-  const stopListening = useCallback(() => {
-    assemblyAI.disconnect();
-    setIsListening(false);
-    setCurrentText('');
-    setAudioLevel(0);
+  const stopListening = useCallback(async () => {
+    if (!serviceRef.current) return;
+    
+    try {
+      setAudioChunksSent(serviceRef.current.getAudioChunksSent());
+      await serviceRef.current.stop();
+      setIsListening(false);
+      setInterimTranscript('');
+      setStatus('disconnected');
+    } catch (err) {
+      console.error('[useAssemblyAI] Stop error:', err);
+    }
   }, []);
 
-  // クリーンアップ
-  useEffect(() => {
-    return () => {
-      if (assemblyAI.connected) {
-        assemblyAI.disconnect();
-      }
-    };
+  // テキストをクリア
+  const clearTranscript = useCallback(() => {
+    setTranscript('');
+    setInterimTranscript('');
+    serviceRef.current?.clearTranscript();
   }, []);
+
+  // ブラウザサポートチェック
+  const isSupported = typeof window !== 'undefined' && 
+    'AudioContext' in window && 
+    'mediaDevices' in navigator &&
+    'getUserMedia' in navigator.mediaDevices;
 
   return {
     isListening,
-    audioLevel,
-    currentText,
+    isRecording: isListening,
+    status,
+    transcript,
+    interimTranscript,
     error,
+    audioChunksSent,
+    isSupported,
     startListening,
+    startRecording: startListening,
     stopListening,
+    stopRecording: stopListening,
+    clearTranscript,
   };
 }
