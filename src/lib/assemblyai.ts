@@ -84,6 +84,8 @@ export class AssemblyAIRealtime {
         sample_rate: '16000',
         token: token,
         format_turns: 'true',
+        speech_model: 'universal-streaming-multilingual', // 日本語対応
+        language_detection: 'true', // 言語自動検出
       });
       
       const wsUrl = `wss://streaming.assemblyai.com/v3/ws?${params.toString()}`;
