@@ -22,7 +22,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.51';
+const APP_VERSION = 'v1.52';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -136,6 +136,7 @@ export default function App() {
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
   const [userHint, setUserHint] = useState<string>('');
+  const [showHintInput, setShowHintInput] = useState(false);
   const [showLevelSelector, setShowLevelSelector] = useState(false);
   const [conversations, setConversations] = useState<ConversationEntry[]>([]);
   const [lookedUpWords, setLookedUpWords] = useState<LookedUpWord[]>([]);
@@ -480,20 +481,28 @@ export default function App() {
 
       {/* メインコンテンツ */}
       <main className="main-content">
-        {/* ヒント入力欄 */}
-        <section className="section hint-section">
-          <div className="hint-input-container">
-            <span className="hint-label">💡 ヒント:</span>
-            <input
-              type="text"
-              className="hint-input"
-              placeholder="例: 今日の会議は【プロジェクトA】について、参加者は田中さん、鈴木さん..."
+        {/* ヒントボタンと入力欄 */}
+        <div className="hint-toggle-container">
+          <button
+            className={`hint-toggle-btn ${userHint ? 'has-hint' : ''}`}
+            onClick={() => setShowHintInput(!showHintInput)}
+          >
+            💡 {showHintInput ? 'ヒントを閉じる' : 'ヒントを入力'}
+            {userHint && !showHintInput && <span className="hint-indicator">✓</span>}
+          </button>
+        </div>
+        {showHintInput && (
+          <section className="section hint-section">
+            <textarea
+              className="hint-textarea"
+              placeholder="例: 今日の会議は【プロジェクトA】について&#10;参加者: 田中さん、鈴木さん&#10;専門用語: API、SDK、マイクロサービス"
               value={userHint}
               onChange={(e) => setUserHint(e.target.value)}
               onClick={(e) => e.stopPropagation()}
+              rows={3}
             />
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* リアルタイム欄（OpenAI出力をそのまま表示） */}
         <section className="section realtime-section">
