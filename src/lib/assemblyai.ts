@@ -217,8 +217,9 @@ export class AssemblyAIService {
       await this.initializeMicrophone();
 
       // Connect to WebSocket (v3 API)
-      // Using formatted_finals=true to get complete turns
-      const endpoint = `wss://streaming.assemblyai.com/v3/ws?sample_rate=${this.config.sampleRate}&formatted_finals=true&token=${token}`;
+      // Using format_turns=true for formatted transcripts
+      // Using speech_model=universal-streaming-multilingual for Japanese support
+      const endpoint = `wss://streaming.assemblyai.com/v3/ws?sample_rate=${this.config.sampleRate}&format_turns=true&speech_model=universal-streaming-multilingual&token=${token}`;
       console.log('[AssemblyAI] Connecting to WebSocket...');
       
       this.ws = new WebSocket(endpoint);
