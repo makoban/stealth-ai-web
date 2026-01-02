@@ -17,7 +17,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.30';
+const APP_VERSION = 'v1.31';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -196,8 +196,8 @@ export default function App() {
 
       setConversations(prev => [...prev, entry]);
 
-      // 固有名詞を検出
-      const nouns = await detectProperNouns(corrected.correctedText, HARDCODED_API_KEY);
+      // 固有名詞を検出（知識レベルに応じて）
+      const nouns = await detectProperNouns(corrected.correctedText, knowledgeLevel, HARDCODED_API_KEY);
 
       for (const noun of nouns) {
         if (processedWordsRef.current.has(noun.word)) continue;

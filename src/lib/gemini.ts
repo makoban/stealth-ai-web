@@ -167,17 +167,28 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
 // 固有名詞を検出
 export async function detectProperNouns(
   text: string,
+  knowledgeLevel: KnowledgeLevel,
   apiKey: string
 ): Promise<ProperNoun[]> {
-  const prompt = `以下のテキストから固有名詞（人名、地名、組織名、製品名、作品名など）を抽出してください。
-一般的な名詞や動詞は含めないでください。
+  // 知識レベルに応じた検出基準
+  const levelCriteria = {
+    elementary: '小学生が知らない可能性が高い単語を抽出してください。小学校の教科書に出てこないような専門用語、企業名、人名、地名など',
+    middle: '中学生が知らない可能性がある単語を抽出してください。中学の教科書に出てこないような専門用語や固有名詞',
+    high: '高校生が知らない可能性がある単語を抽出してください。高校の教科書を超える専門用語や固有名詞',
+    university: '大学生が知らない可能性がある単語を抽出してください。専門分野の用語や最新の固有名詞',
+    expert: '専門家でも確認が必要な可能性がある単語のみ抽出してください。非常に専門的な用語や最新の固有名詞',
+  };
+
+  const prompt = `以下のテキストから固有名詞（人名、地名、組織名、製品名、作品名、専門用語など）を抽出してください。
+
+重要: ${levelCriteria[knowledgeLevel]}
 
 テキスト: "${text}"
 
 JSON形式で回答してください:
 [{"word": "固有名詞", "category": "カテゴリ", "confidence": 0.9}]
 
-固有名詞がない場合は空の配列[]を返してください。`;
+該当する単語がない場合は空の配列[]を返してください。`;
 
   try {
     const response = await callGemini(prompt, apiKey);
