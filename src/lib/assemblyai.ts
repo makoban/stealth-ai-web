@@ -71,16 +71,6 @@ export class AssemblyAIRealtime {
     return int16Array;
   }
 
-  // ArrayBufferをBase64文字列に変換
-  private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
   // 接続開始
   async connect(): Promise<void> {
     try {
@@ -240,9 +230,8 @@ export class AssemblyAIRealtime {
       // Float32 to Int16 PCM変換
       const pcmData = this.float32ToInt16(resampledData);
 
-      // Base64エンコードして文字列として送信（v3 APIの要件）
-      const base64Data = this.arrayBufferToBase64(pcmData.buffer as ArrayBuffer);
-      this.socket.send(base64Data);
+      // バイナリデータとして送信（v3 APIは bytes 形式を期待）
+      this.socket.send(pcmData.buffer);
       
       audioChunkCount++;
       if (audioChunkCount % 50 === 0) {
