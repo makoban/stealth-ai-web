@@ -78,25 +78,6 @@ export default function App() {
     }
   }, [openaiApiKey]);
 
-  // 増幅倍率の自動調整
-  useEffect(() => {
-    if (!isListening) return;
-    
-    // 音声レベルに基づいて自動調整
-    const targetLevel = 0.3; // 目標レベル30%
-    const currentLevel = audioLevel;
-    
-    if (currentLevel > 0.01) { // 無音でない場合のみ調整
-      if (currentLevel < targetLevel * 0.5 && gainValue < 10) {
-        // 音が小さすぎる場合は増幅を上げる
-        setGainValue(prev => Math.min(prev + 0.2, 10));
-      } else if (currentLevel > targetLevel * 1.5 && gainValue > 1) {
-        // 音が大きすぎる場合は増幅を下げる
-        setGainValue(prev => Math.max(prev - 0.2, 1));
-      }
-    }
-  }, [audioLevel, isListening, gainValue]);
-
   // Whisper API
   const {
     transcript,
@@ -110,7 +91,6 @@ export default function App() {
     clearTranscript,
     isSupported,
     error: speechError,
-    processingStatus,
   } = useWhisperRecognition({
     apiKey: openaiApiKey,
     intervalMs: 4000, // 4秒ごとに送信（認識精度向上のため）
@@ -141,6 +121,25 @@ export default function App() {
   useEffect(() => {
     setGain(gainValue);
   }, [gainValue, setGain]);
+
+  // 増幅倍率の自動調整
+  useEffect(() => {
+    if (!isListening) return;
+    
+    // 音声レベルに基づいて自動調整
+    const targetLevel = 0.3; // 目標レベル30%
+    const currentLevel = audioLevel;
+    
+    if (currentLevel > 0.01) { // 無音でない場合のみ調整
+      if (currentLevel < targetLevel * 0.5 && gainValue < 10) {
+        // 音が小さすぎる場合は増幅を上げる
+        setGainValue(prev => Math.min(prev + 0.2, 10));
+      } else if (currentLevel > targetLevel * 1.5 && gainValue > 1) {
+        // 音が大きすぎる場合は増幅を下げる
+        setGainValue(prev => Math.max(prev - 0.2, 1));
+      }
+    }
+  }, [audioLevel, isListening, gainValue]);
 
   // 要約を更新
   const updateSummary = useCallback(async (conversation: string) => {
