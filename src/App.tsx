@@ -22,7 +22,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.52';
+const APP_VERSION = 'v1.53';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -135,8 +135,9 @@ export default function App() {
   const setGain = whisper.setGain;
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
-  const [userHint, setUserHint] = useState<string>('');
-  const [showHintInput, setShowHintInput] = useState(false);
+  const [teachFileName, setTeachFileName] = useState<string>(''); // ファイル名（表示用）
+  const [teachContent, setTeachContent] = useState<string>(''); // ファイル内容（Geminiに渡す）
+  const teachFileInputRef = useRef<HTMLInputElement>(null);
   const [showLevelSelector, setShowLevelSelector] = useState(false);
   const [conversations, setConversations] = useState<ConversationEntry[]>([]);
   const [lookedUpWords, setLookedUpWords] = useState<LookedUpWord[]>([]);
@@ -259,8 +260,8 @@ export default function App() {
     }
 
     try {
-      // 会話をGeminiで整形（文脈・ジャンル・ユーザーヒントを考慮して正確な日本語に）
-      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, HARDCODED_API_KEY, userHint);
+      // 会話をGeminiで整形（文脈・ジャンル・教えるファイルを考慮して正確な日本語に）
+      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, HARDCODED_API_KEY, teachContent);
 
       const entry: ConversationEntry = {
         id: Date.now().toString(),
@@ -349,7 +350,7 @@ export default function App() {
     } catch (e) {
       console.error('Detection error:', e);
     }
-  }, [fullConversation, knowledgeLevel, currentGenre, userHint]);
+  }, [fullConversation, knowledgeLevel, currentGenre, teachContent]);
 
   // transcript変更を監視（リアルタイム欄から会話欄に移動したとき）
   useEffect(() => {
@@ -481,28 +482,50 @@ export default function App() {
 
       {/* メインコンテンツ */}
       <main className="main-content">
-        {/* ヒントボタンと入力欄 */}
-        <div className="hint-toggle-container">
+        {/* 教える欄（TXTファイル読み込み） */}
+        <div className="teach-container">
+          <input
+            type="file"
+            ref={teachFileInputRef}
+            accept=".txt"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                  const content = event.target?.result as string;
+                  setTeachContent(content);
+                  // ファイル名から.txtを除去
+                  const nameWithoutExt = file.name.replace(/\.txt$/i, '');
+                  setTeachFileName(nameWithoutExt);
+                };
+                reader.readAsText(file);
+              }
+            }}
+          />
           <button
-            className={`hint-toggle-btn ${userHint ? 'has-hint' : ''}`}
-            onClick={() => setShowHintInput(!showHintInput)}
+            className={`teach-btn ${teachFileName ? 'has-file' : ''}`}
+            onClick={() => teachFileInputRef.current?.click()}
           >
-            💡 {showHintInput ? 'ヒントを閉じる' : 'ヒントを入力'}
-            {userHint && !showHintInput && <span className="hint-indicator">✓</span>}
+            📚 {teachFileName || '教える'}
+            {teachFileName && <span className="teach-indicator">✓</span>}
           </button>
+          {teachFileName && (
+            <button
+              className="teach-clear-btn"
+              onClick={() => {
+                setTeachFileName('');
+                setTeachContent('');
+                if (teachFileInputRef.current) {
+                  teachFileInputRef.current.value = '';
+                }
+              }}
+            >
+              ×
+            </button>
+          )}
         </div>
-        {showHintInput && (
-          <section className="section hint-section">
-            <textarea
-              className="hint-textarea"
-              placeholder="例: 今日の会議は【プロジェクトA】について&#10;参加者: 田中さん、鈴木さん&#10;専門用語: API、SDK、マイクロサービス"
-              value={userHint}
-              onChange={(e) => setUserHint(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              rows={3}
-            />
-          </section>
-        )}
 
         {/* リアルタイム欄（OpenAI出力をそのまま表示） */}
         <section className="section realtime-section">
