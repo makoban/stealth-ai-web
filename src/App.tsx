@@ -7,6 +7,8 @@ import {
   summarizeConversation,
   correctConversationWithGenre,
   detectConversationGenre,
+  generateGenreKeywords,
+  buildWhisperPrompt,
   getTotalApiUsageStats,
   resetAllUsageStats,
   HARDCODED_API_KEY,
@@ -22,7 +24,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.54';
+const APP_VERSION = 'v1.55';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -101,12 +103,16 @@ export default function App() {
     localStorage.setItem('speech_engine', speechEngine);
   }, [speechEngine]);
 
-
+  // Whisperプロンプト用（フック使用前に定義が必要）
+  const [whisperPrompt, setWhisperPrompt] = useState<string>('');
+  const [genreKeywords, setGenreKeywords] = useState<string>('');
+  const detectedNounsRef = useRef<string[]>([]); // 検出済み固有名詞
 
   // Whisper API
   const whisper = useWhisperRecognition({
     apiKey: openaiApiKey,
     intervalMs: 4000,
+    whisperPrompt: whisperPrompt, // ジャンル・教えるファイル・検出済み固有名詞から構築
   });
 
   // Whisperの音声認識状態
@@ -186,6 +192,13 @@ export default function App() {
     }
   }, [audioLevel, isListening, gainValue, isClipping]);
 
+  // Whisperプロンプトを構築（教えるファイル・ジャンルキーワード・検出済み固有名詞から）
+  useEffect(() => {
+    const prompt = buildWhisperPrompt(teachContent, genreKeywords, detectedNounsRef.current);
+    setWhisperPrompt(prompt);
+    console.log('[App] Whisper prompt updated:', prompt.slice(0, 100) + '...');
+  }, [teachContent, genreKeywords]);
+
   // 要約を更新
   const updateSummary = useCallback(async (conversation: string) => {
     console.log('[App] updateSummary called, length:', conversation.length);
@@ -244,12 +257,28 @@ export default function App() {
       
       console.log('[App] Genre detected:', genre);
       setCurrentGenre(genre);
+      
+      // ジャンル別キーワードを生成（Whisperプロンプト用）
+      if (genre && genre.confidence > 0.5) {
+        try {
+          const keywords = await generateGenreKeywords(
+            genre,
+            teachContent,
+            detectedNounsRef.current,
+            HARDCODED_API_KEY
+          );
+          setGenreKeywords(keywords);
+          console.log('[App] Genre keywords generated:', keywords.slice(0, 100) + '...');
+        } catch (e) {
+          console.error('[App] Failed to generate genre keywords:', e);
+        }
+      }
     } catch (e) {
       console.error('Genre detection error:', e);
     } finally {
       setIsDetectingGenre(false);
     }
-  }, [currentGenre, isDetectingGenre]);
+  }, [currentGenre, isDetectingGenre, teachContent]);
 
   // テキストを処理（Gemini整形、拡張固有名詞検出）- 会話欄移動時に呼ばれる
   const processText = useCallback(async (text: string) => {
@@ -306,6 +335,10 @@ export default function App() {
       ];
 
       console.log('[App] Detected nouns:', allNouns.length, 'confirmed:', result.confirmed.length, 'candidates:', result.candidates.length, 'level:', knowledgeLevel);
+
+      // 検出した固有名詞をWhisperプロンプト用に保存
+      const newNouns = allNouns.map(n => n.word);
+      detectedNounsRef.current = [...new Set([...detectedNounsRef.current, ...newNouns])].slice(-50);
 
       for (const noun of allNouns) {
         if (processedWordsRef.current.has(noun.word)) continue;
@@ -420,7 +453,10 @@ export default function App() {
     setApiUsage(getTotalApiUsageStats());
     setCurrentGenre(null);
     lastGenreUpdateRef.current = 0;
-    // ヒントはリセットしない（ユーザーが意図的に入力したものなので）
+    // Whisperプロンプト関連のリセット（ジャンルキーワードと検出済み固有名詞）
+    setGenreKeywords('');
+    detectedNounsRef.current = [];
+    // 教えるファイルはリセットしない（ユーザーが意図的に読み込んだものなので）
   };
 
   // 接続状態の色

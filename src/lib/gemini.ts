@@ -815,3 +815,100 @@ JSON形式で回答してください:
     return [];
   }
 }
+
+
+// ジャンル別の固有名詞・専門用語を生成（Whisperプロンプト用）
+export async function generateGenreKeywords(
+  genre: ConversationGenre,
+  teachContent: string,
+  detectedNouns: string[],
+  apiKey: string
+): Promise<string> {
+  // 教えるファイルの内容から固有名詞を抽出
+  const teachHint = teachContent && teachContent.trim()
+    ? `
+【ユーザーが教えた情報】:
+${teachContent.slice(0, 300)}
+
+この情報に含まれる固有名詞（人名、地名、組織名、専門用語など）を優先的に含めてください。`
+    : '';
+
+  // 既に検出された固有名詞
+  const detectedHint = detectedNouns.length > 0
+    ? `
+【会話で既に検出された固有名詞】:
+${detectedNouns.slice(0, 20).join('、')}
+
+これらの固有名詞も含めてください。`
+    : '';
+
+  const prompt = `音声認識（Whisper API）の精度向上のため、以下のジャンルでよく使われる固有名詞・専門用語のリストを生成してください。
+
+【ジャンル】: ${genre.primary}${genre.secondary.length > 0 ? `（関連: ${genre.secondary.join('、')}）` : ''}
+【キーワード】: ${genre.keywords.join('、')}
+${teachHint}
+${detectedHint}
+
+【生成ルール】
+1. そのジャンルで頻出する固有名詞を20〜30個程度
+2. 人名、地名、組織名、製品名、専門用語をバランスよく
+3. 音声認識で間違いやすい単語を優先（例: 同志社→どうしても、慶應→けいおう）
+4. カンマ区切りの単純なリストで出力
+5. 説明は不要、単語のみ
+
+【出力例】
+同志社大学、慶應義塾大学、早稲田大学、立命館大学、関西学院大学、上智大学、明治大学、青山学院大学、教授、准教授、ゼミ、単位、履修、卒論、修論
+
+ジャンル「${genre.primary}」の固有名詞リスト:`;
+
+  try {
+    const response = await callGemini(prompt, apiKey);
+    // 改行やスペースを整理してカンマ区切りのリストにする
+    const cleanedResponse = response
+      .replace(/\n/g, '、')
+      .replace(/、+/g, '、')
+      .replace(/^、|、$/g, '')
+      .trim();
+    
+    console.log('[Gemini] Generated genre keywords:', cleanedResponse.slice(0, 100) + '...');
+    return cleanedResponse;
+  } catch (error) {
+    console.error('[Gemini] Failed to generate genre keywords:', error);
+    return '';
+  }
+}
+
+// Whisper用のプロンプトを構築
+export function buildWhisperPrompt(
+  teachContent: string,
+  genreKeywords: string,
+  detectedNouns: string[]
+): string {
+  const parts: string[] = [];
+  
+  // 教えるファイルの内容から固有名詞を抽出（最優先）
+  if (teachContent && teachContent.trim()) {
+    // 簡易的に固有名詞っぽい部分を抽出（カタカナ、漢字の連続など）
+    const nouns = teachContent.match(/[ァ-ヶー]+|[一-龯]+[ァ-ヶー]*|[A-Za-z]+/g);
+    if (nouns && nouns.length > 0) {
+      const uniqueNouns = [...new Set(nouns)].slice(0, 30);
+      parts.push(uniqueNouns.join('、'));
+    }
+  }
+  
+  // ジャンル別キーワード
+  if (genreKeywords && genreKeywords.trim()) {
+    parts.push(genreKeywords.slice(0, 200));
+  }
+  
+  // 既に検出された固有名詞
+  if (detectedNouns.length > 0) {
+    parts.push(detectedNouns.slice(0, 15).join('、'));
+  }
+  
+  // 結合して400文字に制限（Whisperの224トークン制限に対応）
+  const combined = parts.join('、').slice(0, 400);
+  
+  console.log('[Whisper] Built prompt:', combined.slice(0, 100) + '...');
+  return combined;
+}

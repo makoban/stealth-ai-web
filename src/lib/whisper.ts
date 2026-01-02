@@ -45,18 +45,28 @@ function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
 export async function transcribeAudio(
   audioBlob: Blob,
   apiKey: string,
-  language: string = 'ja'
+  prompt?: string // 固有名詞や専門用語のヒント（最大224トークン）
 ): Promise<{ text: string; duration: number }> {
   console.log('[Whisper] Sending audio:', {
     type: audioBlob.type,
     size: audioBlob.size,
+    hasPrompt: !!prompt,
+    promptLength: prompt?.length || 0,
   });
 
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.wav');
   formData.append('model', 'whisper-1');
-  formData.append('language', language);
+  formData.append('language', 'ja'); // 日本語固定
   formData.append('response_format', 'verbose_json');
+  
+  // プロンプトがあれば追加（固有名詞の認識精度向上）
+  if (prompt && prompt.trim()) {
+    // Whisperのプロンプトは最大224トークンなので、約400文字に制限
+    const truncatedPrompt = prompt.trim().slice(0, 400);
+    formData.append('prompt', truncatedPrompt);
+    console.log('[Whisper] Using prompt:', truncatedPrompt.slice(0, 100) + '...');
+  }
 
   const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',

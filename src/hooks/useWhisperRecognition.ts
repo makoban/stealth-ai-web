@@ -7,6 +7,7 @@ export interface UseWhisperRecognitionOptions {
   apiKey?: string;
   intervalMs?: number; // 音声を送信する間隔（ミリ秒）
   silenceThreshold?: number; // 無音と判定する閾値（0-1）
+  whisperPrompt?: string; // Whisper APIに渡すプロンプト（固有名詞のヒント）
 }
 
 // Whisperの幻覚（hallucination）としてよく出るフレーズ
@@ -120,6 +121,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     apiKey = OPENAI_API_KEY,
     intervalMs = 4000, // 4秒ごとに送信
     silenceThreshold = 0.05, // 5%以下は無音と判定
+    whisperPrompt = '', // Whisperに渡すプロンプト
   } = options;
 
   const [transcript, setTranscript] = useState<string>('');
@@ -139,13 +141,19 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
   const apiKeyRef = useRef<string>(apiKey);
+  const whisperPromptRef = useRef<string>(whisperPrompt);
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
   const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
 
-  // APIキーをrefで保持（再レンダリングを防ぐ）
+  // APIキーとプロンプトをrefで保持（再レンダリングを防ぐ）
   useEffect(() => {
     apiKeyRef.current = apiKey;
   }, [apiKey]);
+
+  useEffect(() => {
+    whisperPromptRef.current = whisperPrompt;
+    console.log('[Whisper] Prompt updated:', whisperPrompt?.slice(0, 50) + '...');
+  }, [whisperPrompt]);
 
   // サポート確認
   useEffect(() => {
@@ -215,8 +223,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setInterimTranscript(currentPending ? currentPending + ' 🎤...' : '🎤 認識中...');
 
     try {
-      console.log('[Whisper] Sending to API...');
-      const result = await transcribeAudio(blob, apiKeyRef.current);
+      console.log('[Whisper] Sending to API with prompt...');
+      const result = await transcribeAudio(blob, apiKeyRef.current, whisperPromptRef.current);
       console.log('[Whisper] Result:', result);
       
       if (result.text && result.text.trim()) {
@@ -356,7 +364,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         setProcessingStatus('最終処理中...');
         
         try {
-          const result = await transcribeAudio(finalBlob, apiKeyRef.current);
+          const result = await transcribeAudio(finalBlob, apiKeyRef.current, whisperPromptRef.current);
           if (result.text && result.text.trim() && !isHallucination(result.text.trim())) {
             pendingTextRef.current = pendingTextRef.current 
               ? pendingTextRef.current + ' ' + result.text.trim() 
