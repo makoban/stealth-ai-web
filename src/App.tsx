@@ -22,13 +22,13 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.45';
+const APP_VERSION = 'v1.46';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper' | 'assemblyai';
 const ENGINE_LABELS: Record<SpeechEngine, string> = {
   whisper: 'Whisper',
-  assemblyai: 'AssemblyAI',
+  assemblyai: 'AssemblyAI (日本語非対応)',
 };
 
 // フィルタリングする不要なテキスト

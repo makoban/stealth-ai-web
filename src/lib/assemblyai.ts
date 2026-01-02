@@ -2,7 +2,8 @@
  * AssemblyAI Real-time Transcription Service
  * Using v3 WebSocket API with AudioWorklet
  * 
- * 公式実装参考: https://github.com/AssemblyAI/realtime-transcription-browser-js-example
+ * 注意: AssemblyAI Streaming APIは日本語をサポートしていません。
+ * 対応言語: English, Spanish, French, German, Italian, Portuguese
  */
 
 export interface AssemblyAIConfig {
@@ -40,9 +41,10 @@ export class AssemblyAIService {
   private turns: Map<number, string> = new Map();
   private audioChunksSent = 0;
   
-  // Audio buffer for accumulating 100ms of audio before sending
+  // Audio buffer for accumulating audio before sending
+  // AssemblyAI API requires 50ms-1000ms chunks
   private audioBufferQueue: Int16Array = new Int16Array(0);
-  private readonly MIN_BUFFER_DURATION_MS = 100; // Send every 100ms
+  private readonly MIN_BUFFER_DURATION_MS = 50; // Send every 50ms for faster response
 
   constructor(config: AssemblyAIConfig) {
     this.config = {
