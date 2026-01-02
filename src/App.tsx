@@ -16,7 +16,7 @@ import {
 import { OPENAI_API_KEY } from './lib/whisper';
 import './App.css';
 
-const APP_VERSION = 'v1.28';
+const APP_VERSION = 'v1.29';
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -356,7 +356,7 @@ export default function App() {
               {conversations.length === 0 ? (
                 <p className="placeholder">会話がここに表示されます</p>
               ) : (
-                conversations.map(entry => (
+                [...conversations].reverse().map(entry => (
                   <div key={entry.id} className="conversation-entry animate-fadeIn">
                     <span className="entry-text">
                       {entry.text}
@@ -385,7 +385,7 @@ export default function App() {
               {summaryHistory.length === 0 ? (
                 <p className="placeholder">要約がここに表示されます</p>
               ) : (
-                summaryHistory.map((entry, index) => (
+                [...summaryHistory].reverse().map((entry, index) => (
                   <div key={index} className="summary-entry animate-fadeIn">
                     <p className="summary-text">{entry.summary}</p>
                     {entry.topics.length > 0 && (
@@ -413,7 +413,7 @@ export default function App() {
               {lookedUpWords.length === 0 ? (
                 <p className="placeholder">固有名詞の説明がここに表示されます</p>
               ) : (
-                lookedUpWords.map((word, index) => (
+                [...lookedUpWords].reverse().map((word, index) => (
                   <div key={index} className="word-entry animate-fadeIn">
                     <div className="word-header">
                       <span className="word-name">{word.word}</span>
