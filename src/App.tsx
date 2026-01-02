@@ -22,7 +22,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.53';
+const APP_VERSION = 'v1.54';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -697,16 +697,6 @@ export default function App() {
         <div className="modal-overlay" onClick={() => setShowSettings(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>⚙️ 設定</h2>
-            <div className="setting-item">
-              <label>音声増幅: {gainValue}x</label>
-              <input
-                type="range"
-                min="1"
-                max="50"
-                value={gainValue}
-                onChange={(e) => setGainValue(Number(e.target.value))}
-              />
-            </div>
             <div className="setting-item">
               <label>音声認識エンジン</label>
               <p className="setting-info">Whisper (OpenAI) - 高精度な日本語認識</p>
