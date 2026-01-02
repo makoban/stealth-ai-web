@@ -577,7 +577,8 @@ export async function correctConversationWithGenre(
   text: string,
   context: string,
   genre: ConversationGenre | null,
-  apiKey: string
+  apiKey: string,
+  userHint?: string
 ): Promise<CorrectedConversation> {
   const genreContext = genre && genre.confidence > 0.5
     ? `
@@ -587,11 +588,18 @@ export async function correctConversationWithGenre(
 「テクノロジー・IT」ジャンルなら「あいふぉん」→「iPhone」、「ぐーぐる」→「Google」など。`
     : '';
 
+  const userHintContext = userHint && userHint.trim()
+    ? `
+【ユーザーからのヒント】
+${userHint.trim()}
+上記のヒントを参考に、固有名詞や専門用語の正しい表記を推測してください。`
+    : '';
+
   const prompt = `音声認識で取得した以下のテキストを、前後の文脈から誤認識を修正してください。
 
 テキスト: "${text}"
 前後の文脈: "${context}"
-${genreContext}
+${genreContext}${userHintContext}
 
 修正が必要な場合は修正し、不確かな単語には「？」を付けてください。
 

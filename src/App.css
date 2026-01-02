@@ -1166,3 +1166,68 @@
     font-size: 12px;
   }
 }
+
+
+/* ヒント入力欄 */
+.hint-section {
+  flex: 0 0 auto;
+  min-height: auto;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%);
+  border: 2px solid #FFD54F;
+}
+
+.hint-input-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hint-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #F57C00;
+  white-space: nowrap;
+}
+
+.hint-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 2px solid #FFD54F;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.hint-input:focus {
+  border-color: #FF9800;
+  box-shadow: 0 0 0 3px rgba(255, 152, 0, 0.2);
+}
+
+.hint-input::placeholder {
+  color: #BDBDBD;
+  font-size: 12px;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 480px) {
+  .hint-section {
+    padding: 6px 10px;
+  }
+  
+  .hint-label {
+    font-size: 12px;
+  }
+  
+  .hint-input {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+  
+  .hint-input::placeholder {
+    font-size: 11px;
+  }
+}

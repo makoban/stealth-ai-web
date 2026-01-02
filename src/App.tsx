@@ -22,7 +22,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.50';
+const APP_VERSION = 'v1.51';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -135,6 +135,7 @@ export default function App() {
   const setGain = whisper.setGain;
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
+  const [userHint, setUserHint] = useState<string>('');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
   const [conversations, setConversations] = useState<ConversationEntry[]>([]);
   const [lookedUpWords, setLookedUpWords] = useState<LookedUpWord[]>([]);
@@ -257,8 +258,8 @@ export default function App() {
     }
 
     try {
-      // 会話をGeminiで整形（文脈・ジャンルを考慮して正確な日本語に）
-      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, HARDCODED_API_KEY);
+      // 会話をGeminiで整形（文脈・ジャンル・ユーザーヒントを考慮して正確な日本語に）
+      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, HARDCODED_API_KEY, userHint);
 
       const entry: ConversationEntry = {
         id: Date.now().toString(),
@@ -347,7 +348,7 @@ export default function App() {
     } catch (e) {
       console.error('Detection error:', e);
     }
-  }, [fullConversation, knowledgeLevel, currentGenre]);
+  }, [fullConversation, knowledgeLevel, currentGenre, userHint]);
 
   // transcript変更を監視（リアルタイム欄から会話欄に移動したとき）
   useEffect(() => {
@@ -417,6 +418,7 @@ export default function App() {
     setApiUsage(getTotalApiUsageStats());
     setCurrentGenre(null);
     lastGenreUpdateRef.current = 0;
+    // ヒントはリセットしない（ユーザーが意図的に入力したものなので）
   };
 
   // 接続状態の色
@@ -478,6 +480,21 @@ export default function App() {
 
       {/* メインコンテンツ */}
       <main className="main-content">
+        {/* ヒント入力欄 */}
+        <section className="section hint-section">
+          <div className="hint-input-container">
+            <span className="hint-label">💡 ヒント:</span>
+            <input
+              type="text"
+              className="hint-input"
+              placeholder="例: 今日の会議は【プロジェクトA】について、参加者は田中さん、鈴木さん..."
+              value={userHint}
+              onChange={(e) => setUserHint(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </section>
+
         {/* リアルタイム欄（OpenAI出力をそのまま表示） */}
         <section className="section realtime-section">
           <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
