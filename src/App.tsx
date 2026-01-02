@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useWhisperRecognition, RealtimeTextResult } from './hooks/useWhisperRecognition';
+import { useWhisperRecognition } from './hooks/useWhisperRecognition';
 // AssemblyAIは日本語非対応のため削除済み
 import {
   detectProperNounsExtended,
   investigateProperNoun,
   summarizeConversation,
+  correctConversationWithGenre,
   detectConversationGenre,
   getTotalApiUsageStats,
   resetAllUsageStats,
@@ -21,7 +22,7 @@ import { OPENAI_API_KEY } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.49';
+const APP_VERSION = 'v1.50';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -150,9 +151,6 @@ export default function App() {
   const lastProcessedTranscript = useRef('');
   const conversationSummaryRef = useRef<ConversationSummary | null>(null);
   const processedWordsRef = useRef<Set<string>>(new Set());
-  
-  // リアルタイム整形で検出された固有名詞のキュー
-  const realtimeProperNounsRef = useRef<string[]>([]);
 
   // API使用量を定期更新
   useEffect(() => {
@@ -184,37 +182,6 @@ export default function App() {
       setGainValue(prev => Math.max(prev - 2, 10));
     }
   }, [audioLevel, isListening, gainValue, isClipping]);
-
-  // Whisperフックにコンテキストとジャンルを渡す
-  useEffect(() => {
-    whisper.updateContext(fullConversation);
-  }, [fullConversation, whisper]);
-
-  useEffect(() => {
-    whisper.updateGenre(currentGenre);
-  }, [currentGenre, whisper]);
-
-  // リアルタイム整形コールバックを設定
-  useEffect(() => {
-    const handleRealtimeCorrection = (result: RealtimeTextResult) => {
-      console.log('[App] Realtime correction received:', result);
-      
-      // 検出された固有名詞をキューに追加
-      if (result.detectedProperNouns && result.detectedProperNouns.length > 0) {
-        realtimeProperNounsRef.current = [
-          ...realtimeProperNounsRef.current,
-          ...result.detectedProperNouns,
-        ];
-        console.log('[App] Queued proper nouns:', realtimeProperNounsRef.current);
-      }
-    };
-    
-    whisper.setRealtimeCorrectionCallback(handleRealtimeCorrection);
-    
-    return () => {
-      whisper.setRealtimeCorrectionCallback(null);
-    };
-  }, [whisper]);
 
   // 要約を更新
   const updateSummary = useCallback(async (conversation: string) => {
@@ -251,7 +218,7 @@ export default function App() {
   }, []);
 
   // ジャンルを推定
-  const updateGenreState = useCallback(async (conversation: string) => {
+  const updateGenre = useCallback(async (conversation: string) => {
     // 最後のジャンル更新から10秒以上経過、かつ100文字以上の会話がある場合のみ更新
     const now = Date.now();
     if (now - lastGenreUpdateRef.current < 10000) return;
@@ -281,15 +248,31 @@ export default function App() {
     }
   }, [currentGenre, isDetectingGenre]);
 
-  // 固有名詞を調査（整形済みテキストから）
-  const investigateProperNouns = useCallback(async (text: string, preDetectedNouns: string[]) => {
-    console.log('[App] investigateProperNouns called:', text, 'preDetected:', preDetectedNouns);
-    if (!text.trim()) return;
+  // テキストを処理（Gemini整形、拡張固有名詞検出）- 会話欄移動時に呼ばれる
+  const processText = useCallback(async (text: string) => {
+    console.log('[App] processText called:', text);
+    if (!text.trim()) {
+      console.log('[App] Skipping processText - empty text');
+      return;
+    }
 
     try {
-      // 拡張固有名詞検出（候補を含む幅広い検出）
+      // 会話をGeminiで整形（文脈・ジャンルを考慮して正確な日本語に）
+      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, HARDCODED_API_KEY);
+
+      const entry: ConversationEntry = {
+        id: Date.now().toString(),
+        text: corrected.correctedText,
+        originalText: corrected.wasModified ? text : undefined,
+        uncertainWords: corrected.uncertainWords,
+        timestamp: new Date(),
+      };
+
+      setConversations(prev => [...prev, entry]);
+
+      // 整形後のテキストから拡張固有名詞検出（候補を含む幅広い検出）
       const result: ExtendedProperNounResult = await detectProperNounsExtended(
-        text,
+        corrected.correctedText,
         knowledgeLevel,
         currentGenre,
         fullConversation,
@@ -297,12 +280,14 @@ export default function App() {
       );
 
       // 知識レベルに応じた閾値設定
+      // 小学生: 何でも調べる（閾値低め）
+      // 専門家: 本当に専門的なものだけ（閾値高め）
       const levelThresholds: Record<KnowledgeLevel, { confirmed: number; candidate: number; includeCandidates: boolean }> = {
-        elementary: { confirmed: 0.5, candidate: 0.3, includeCandidates: true },
-        middle: { confirmed: 0.6, candidate: 0.4, includeCandidates: true },
-        high: { confirmed: 0.7, candidate: 0.5, includeCandidates: true },
-        university: { confirmed: 0.75, candidate: 0.6, includeCandidates: false },
-        expert: { confirmed: 0.85, candidate: 0.8, includeCandidates: false },
+        elementary: { confirmed: 0.5, candidate: 0.3, includeCandidates: true },   // 小学生: 何でも調べる
+        middle: { confirmed: 0.6, candidate: 0.4, includeCandidates: true },       // 中学生: 幅広く調べる
+        high: { confirmed: 0.7, candidate: 0.5, includeCandidates: true },         // 高校生: やや絞る
+        university: { confirmed: 0.75, candidate: 0.6, includeCandidates: false }, // 大学生: 確実なもの中心
+        expert: { confirmed: 0.85, candidate: 0.8, includeCandidates: false },     // 専門家: 本当に専門的なものだけ
       };
 
       const thresholds = levelThresholds[knowledgeLevel];
@@ -310,30 +295,20 @@ export default function App() {
       // 知識レベルに応じて固有名詞を統合
       const allNouns: (ProperNoun & { source: string })[] = [
         ...result.confirmed.map(n => ({ ...n, source: 'confirmed' })),
+        // 候補は知識レベルが低い場合のみ含める
         ...(thresholds.includeCandidates ? result.candidates.map(n => ({ ...n, source: 'candidate' })) : []),
         ...(thresholds.includeCandidates ? result.possibleNames.map(n => ({ ...n, source: 'name' })) : []),
         ...(thresholds.includeCandidates ? result.possiblePlaces.map(n => ({ ...n, source: 'place' })) : []),
         ...(thresholds.includeCandidates ? result.possibleOrgs.map(n => ({ ...n, source: 'org' })) : []),
       ];
 
-      // リアルタイム整形で検出された固有名詞も追加
-      for (const noun of preDetectedNouns) {
-        if (!allNouns.some(n => n.word === noun)) {
-          allNouns.push({
-            word: noun,
-            category: '固有名詞',
-            confidence: 0.8,
-            source: 'realtime',
-          });
-        }
-      }
-
       console.log('[App] Detected nouns:', allNouns.length, 'confirmed:', result.confirmed.length, 'candidates:', result.candidates.length, 'level:', knowledgeLevel);
 
       for (const noun of allNouns) {
         if (processedWordsRef.current.has(noun.word)) continue;
+        // 知識レベルに応じた閾値を適用
         const confidenceThreshold = noun.source === 'confirmed' ? thresholds.confirmed : thresholds.candidate;
-        if (noun.confidence < confidenceThreshold && noun.source !== 'realtime') continue;
+        if (noun.confidence < confidenceThreshold) continue;
 
         processedWordsRef.current.add(noun.word);
 
@@ -374,7 +349,7 @@ export default function App() {
     }
   }, [fullConversation, knowledgeLevel, currentGenre]);
 
-  // transcript変更を監視（整形済みテキストが会話欄に移動したとき）
+  // transcript変更を監視（リアルタイム欄から会話欄に移動したとき）
   useEffect(() => {
     console.log('[App] transcript changed:', { 
       transcript: transcript?.substring(0, 50), 
@@ -397,33 +372,22 @@ export default function App() {
         const filteredText = filteredSegments.join(' ');
         console.log('[App] Processing text:', filteredText);
         
-        // リアルタイム整形で検出された固有名詞を取得してクリア
-        const preDetectedNouns = [...realtimeProperNounsRef.current];
-        realtimeProperNounsRef.current = [];
-        
         setFullConversation(prev => {
           const updated = prev + ' ' + filteredText;
           console.log('[App] fullConversation length:', updated.length);
           updateSummary(updated.trim());
-          updateGenreState(updated.trim());
+          updateGenre(updated.trim()); // ジャンル推定も更新
           return updated;
         });
 
-        // 会話エントリを追加（既に整形済みのテキスト）
+        // 会話欄移動時にGemini整形と固有名詞検出を実行
         filteredSegments.forEach(segment => {
-          const entry: ConversationEntry = {
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-            text: segment.trim(),
-            timestamp: new Date(),
-          };
-          setConversations(prev => [...prev, entry]);
+          console.log('[App] Calling processText:', segment.trim());
+          processText(segment.trim());
         });
-
-        // 固有名詞を調査
-        investigateProperNouns(filteredText, preDetectedNouns);
       }
     }
-  }, [transcript, updateSummary, updateGenreState, investigateProperNouns]);
+  }, [transcript, updateSummary, updateGenre, processText]);
 
   // 録音開始/停止
   const toggleRecording = () => {
@@ -453,7 +417,6 @@ export default function App() {
     setApiUsage(getTotalApiUsageStats());
     setCurrentGenre(null);
     lastGenreUpdateRef.current = 0;
-    realtimeProperNounsRef.current = [];
   };
 
   // 接続状態の色
@@ -515,7 +478,7 @@ export default function App() {
 
       {/* メインコンテンツ */}
       <main className="main-content">
-        {/* リアルタイム欄 */}
+        {/* リアルタイム欄（OpenAI出力をそのまま表示） */}
         <section className="section realtime-section">
           <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
 
@@ -523,7 +486,7 @@ export default function App() {
           </div>
         </section>
 
-        {/* 会話欄 */}
+        {/* 会話欄（Gemini整形後のテキスト） */}
         {(expandedSection === 'none' || expandedSection === 'conversation') && (
           <section
             className={`section conversation-section ${expandedSection === 'conversation' ? 'expanded' : ''}`}
