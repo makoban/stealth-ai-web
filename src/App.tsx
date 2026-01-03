@@ -25,7 +25,7 @@ import {
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v2.0';
+const APP_VERSION = 'v2.1';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
