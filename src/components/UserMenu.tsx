@@ -2,12 +2,14 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { LoginModal } from './LoginModal';
+import { PurchaseModal } from './PurchaseModal';
 import './UserMenu.css';
 
 export function UserMenu() {
   const { user, userData, logout, loading } = useAuth();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
 
   if (loading) {
     return <div className="user-menu-loading">...</div>;
@@ -35,6 +37,13 @@ export function UserMenu() {
   const displayName = userData?.displayName || user.email?.split('@')[0] || 'ユーザー';
   // ポイントは小数点で計算されるが、表示は整数に丸める
   const points = userData?.points !== undefined ? Math.floor(userData.points) : '---';
+  const isPremium = userData?.isPremium || false;
+
+  // ポイント部分をクリックで購入モーダルを開く
+  const handlePointsClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowPurchaseModal(true);
+  };
 
   return (
     <div className="user-menu">
@@ -42,7 +51,15 @@ export function UserMenu() {
         className="user-menu-button"
         onClick={() => setShowDropdown(!showDropdown)}
       >
-        <span className="user-menu-points">{points} pt</span>
+        <span 
+          className="user-menu-points-container"
+          onClick={handlePointsClick}
+        >
+          <span className="user-menu-points">{points} pt</span>
+          <span className={`user-menu-badge ${isPremium ? 'premium' : 'free'}`}>
+            {isPremium ? '有料' : '無料'}
+          </span>
+        </span>
         <span className="user-menu-avatar">
           {displayName.charAt(0).toUpperCase()}
         </span>
@@ -58,11 +75,21 @@ export function UserMenu() {
             <div className="user-menu-info">
               <div className="user-menu-name">{displayName}</div>
               <div className="user-menu-email">{user.email}</div>
+              <div className={`user-menu-membership ${isPremium ? 'premium' : 'free'}`}>
+                {isPremium ? '有料会員' : '無料会員'}
+              </div>
             </div>
             <div className="user-menu-divider" />
-            <div className="user-menu-points-detail">
+            <div 
+              className="user-menu-points-detail clickable"
+              onClick={() => {
+                setShowDropdown(false);
+                setShowPurchaseModal(true);
+              }}
+            >
               <span>ポイント残高</span>
               <span className="user-menu-points-value">{points} pt</span>
+              <span className="user-menu-purchase-hint">タップで購入</span>
             </div>
             <div className="user-menu-divider" />
             <button
@@ -77,6 +104,11 @@ export function UserMenu() {
           </div>
         </>
       )}
+
+      <PurchaseModal
+        isOpen={showPurchaseModal}
+        onClose={() => setShowPurchaseModal(false)}
+      />
     </div>
   );
 }

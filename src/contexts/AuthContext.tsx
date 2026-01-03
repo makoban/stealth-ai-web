@@ -17,6 +17,7 @@ interface UserData {
   email: string | null;
   displayName: string | null;
   points: number;
+  isPremium: boolean;
 }
 
 interface AuthContextType {
@@ -32,6 +33,7 @@ interface AuthContextType {
   clearError: () => void;
   refreshUserData: () => Promise<void>;
   updatePoints: (newPoints: number) => void;
+  updatePremiumStatus: (isPremium: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -64,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: data.email,
           displayName: data.displayName,
           points: data.points,
+          isPremium: data.isPremium || false,
         });
       }
     } catch (err) {
@@ -173,6 +176,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // 有料会員ステータスを更新
+  const updatePremiumStatus = (isPremium: boolean) => {
+    if (userData) {
+      setUserData({
+        ...userData,
+        isPremium,
+      });
+    }
+  };
+
   // エラーをクリア
   const clearError = () => setError(null);
 
@@ -191,6 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearError,
         refreshUserData,
         updatePoints,
+        updatePremiumStatus,
       }}
     >
       {children}

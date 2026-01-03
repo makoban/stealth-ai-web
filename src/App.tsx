@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.6';
+const APP_VERSION = 'v3.7';
 
 
 
@@ -88,7 +88,29 @@ type ExpandedSection = 'none' | 'conversation' | 'summary' | 'lookup';
 
 export default function App() {
   // 認証情報を取得
-  const { user, userData, updatePoints } = useAuth();
+  const { user, userData, updatePoints, refreshUserData, updatePremiumStatus } = useAuth();
+  
+  // 決済成功後の処理（URLパラメータをチェック）
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const payment = urlParams.get('payment');
+    const sessionId = urlParams.get('session_id');
+    
+    if (payment === 'success' && sessionId) {
+      // URLパラメータをクリア
+      window.history.replaceState({}, '', window.location.pathname);
+      
+      // ユーザーデータを更新（ポイントと有料会員ステータス）
+      setTimeout(() => {
+        refreshUserData();
+        updatePremiumStatus(true);
+        alert('🎉 購入ありがとうございます！\nポイントが追加されました。\n有料会員になりました！');
+      }, 1000);
+    } else if (payment === 'cancelled') {
+      // URLパラメータをクリア
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [refreshUserData, updatePremiumStatus]);
 
   // ポイント更新コールバックを設定（リアルタイム更新用）
   // ポイント0で自動停止用のフラグと関数参照
@@ -182,6 +204,11 @@ export default function App() {
   const [currentGenre, setCurrentGenre] = useState<ConversationGenre | null>(null);
   const [isDetectingGenre, setIsDetectingGenre] = useState(false);
   const lastGenreUpdateRef = useRef<number>(0);
+  
+  // セッション時間管理（無料会員15分制限）
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
+  const [sessionElapsedSeconds, setSessionElapsedSeconds] = useState(0);
+  const FREE_SESSION_LIMIT_SECONDS = 15 * 60; // 15分
 
   const lastProcessedTranscript = useRef('');
   const conversationSummaryRef = useRef<ConversationSummary | null>(null);
@@ -194,6 +221,38 @@ export default function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // セッション時間の計測（無料会員15分制限）
+  useEffect(() => {
+    if (!isListening) {
+      setSessionStartTime(null);
+      setSessionElapsedSeconds(0);
+      return;
+    }
+    
+    // 録音開始時にセッション開始時刻を記録
+    if (!sessionStartTime) {
+      setSessionStartTime(Date.now());
+    }
+    
+    const interval = setInterval(() => {
+      if (sessionStartTime) {
+        const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+        setSessionElapsedSeconds(elapsed);
+        
+        // 無料会員は15分で自動停止
+        const isPremium = userData?.isPremium || false;
+        if (!isPremium && elapsed >= FREE_SESSION_LIMIT_SECONDS) {
+          if (stopListeningRef.current) {
+            stopListeningRef.current();
+          }
+          alert('無料会員は1セッション15分までです。\n有料会員になると時間無制限で使えます。');
+        }
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [isListening, sessionStartTime, userData?.isPremium]);
 
   // ログアウト時にすべての表示項目をクリア
   useEffect(() => {
@@ -754,17 +813,33 @@ export default function App() {
           className={`record-btn ${isListening ? 'recording' : ''}`}
           onClick={toggleRecording}
         >
-          {isListening ? '⏹ 停止' : '🎤 開始'}
+          {isListening ? '⏹ 停止' : '🎙 開始'}
         </button>
+        {/* セッション時間表示（無料会員のみ） */}
+        {isListening && !userData?.isPremium && (
+          <div className="session-timer">
+            <span className="timer-label">残り</span>
+            <span className="timer-value">
+              {Math.max(0, Math.floor((FREE_SESSION_LIMIT_SECONDS - sessionElapsedSeconds) / 60))}:
+              {String(Math.max(0, (FREE_SESSION_LIMIT_SECONDS - sessionElapsedSeconds) % 60)).padStart(2, '0')}
+            </span>
+          </div>
+        )}
         <button className="reset-btn" onClick={handleReset}>
           🗑 リセット
         </button>
         <button
           className="export-btn"
-          onClick={() => exportToExcel(conversations, summaryHistory, lookedUpWords)}
+          onClick={() => {
+            if (!userData?.isPremium) {
+              alert('🔒 Excel出力は有料会員限定機能です。\nポイントを購入すると有料会員になります。');
+              return;
+            }
+            exportToExcel(conversations, summaryHistory, lookedUpWords);
+          }}
           disabled={conversations.length === 0}
         >
-          📊 Excel出力
+          📊 Excel{!userData?.isPremium && '🔒'}
         </button>
       </footer>
 

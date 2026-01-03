@@ -28,11 +28,11 @@
 .user-menu-button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.95);
   border: 2px solid #FFD700;
   border-radius: 20px;
-  padding: 4px 8px 4px 12px;
+  padding: 4px 8px 4px 10px;
   cursor: pointer;
   transition: all 0.2s;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -43,11 +43,37 @@
   transform: scale(1.02);
 }
 
+.user-menu-points-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .user-menu-points {
   color: #D4AF37;
   font-size: 14px;
   font-weight: 700;
   text-shadow: none;
+}
+
+/* 会員バッジ */
+.user-menu-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.user-menu-badge.premium {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #333;
+}
+
+.user-menu-badge.free {
+  background: #f0f0f0;
+  color: #666;
+  border: 1px solid #ddd;
 }
 
 .user-menu-avatar {
@@ -79,7 +105,7 @@
   background: #1a1a2e;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
-  min-width: 200px;
+  min-width: 220px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   z-index: 100;
   overflow: hidden;
@@ -99,6 +125,28 @@
 .user-menu-email {
   color: #888;
   font-size: 12px;
+  margin-bottom: 6px;
+}
+
+/* ドロップダウン内の会員ステータス */
+.user-menu-membership {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+.user-menu-membership.premium {
+  background: linear-gradient(135deg, #FFD700, #FFA500);
+  color: #333;
+}
+
+.user-menu-membership.free {
+  background: rgba(255, 255, 255, 0.1);
+  color: #aaa;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .user-menu-divider {
@@ -108,6 +156,7 @@
 
 .user-menu-points-detail {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
@@ -115,9 +164,25 @@
   font-size: 13px;
 }
 
+.user-menu-points-detail.clickable {
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.user-menu-points-detail.clickable:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .user-menu-points-value {
-  color: #4a9eff;
+  color: #FFD700;
   font-weight: 600;
+}
+
+.user-menu-purchase-hint {
+  width: 100%;
+  font-size: 11px;
+  color: #4a9eff;
+  margin-top: 4px;
 }
 
 .user-menu-logout {
@@ -139,11 +204,31 @@
 /* iPhone対応 */
 @media (max-width: 480px) {
   .user-menu-dropdown {
-    min-width: 180px;
+    min-width: 200px;
   }
   
   .user-menu-login-button {
     padding: 10px 16px;
     font-size: 14px;
+  }
+  
+  .user-menu-button {
+    padding: 3px 6px 3px 8px;
+    gap: 4px;
+  }
+  
+  .user-menu-points {
+    font-size: 13px;
+  }
+  
+  .user-menu-badge {
+    font-size: 9px;
+    padding: 2px 4px;
+  }
+  
+  .user-menu-avatar {
+    width: 26px;
+    height: 26px;
+    font-size: 12px;
   }
 }

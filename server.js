@@ -150,6 +150,7 @@ async function getOrCreateUser(firebaseUid, email, phoneNumber, displayName) {
       // DECIMALは文字列で返ってくるのでparseFloat
       const user = existingUser.rows[0];
       user.points = parseFloat(user.points);
+      user.is_premium = user.is_premium || false;
       return user;
     }
     
@@ -325,6 +326,7 @@ app.get('/api/user/me', async (req, res) => {
       email: req.user.email,
       displayName: dbUser.display_name,
       points: dbUser.points,
+      isPremium: dbUser.is_premium || false,
       createdAt: dbUser.created_at,
     });
   } catch (error) {
@@ -787,6 +789,191 @@ app.get('/api/assemblyai/token', checkUserAuth, async (req, res) => {
   } catch (error) {
     console.error('[Proxy] Token generation error:', error);
     res.status(500).json({ error: 'Failed to generate token', details: String(error) });
+  }
+});
+
+// ===========================================
+// Stripe 決済API
+// ===========================================
+
+// プラン定義
+const STRIPE_PLANS = {
+  light: { price: 500, points: 500, name: 'ライト' },
+  standard: { price: 1000, points: 1200, name: 'スタンダード' },
+  pro: { price: 3000, points: 5000, name: 'プロ' },
+};
+
+// Stripe Checkout Sessionを作成
+app.post('/api/stripe/create-checkout-session', checkUserAuth, async (req, res) => {
+  if (!req.user || !req.dbUser) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeSecretKey) {
+    console.error('[Stripe] STRIPE_SECRET_KEY not configured');
+    return res.status(500).json({ error: 'Stripe not configured' });
+  }
+  
+  const { planId } = req.body;
+  const plan = STRIPE_PLANS[planId];
+  
+  if (!plan) {
+    return res.status(400).json({ error: 'Invalid plan' });
+  }
+  
+  try {
+    // Stripe SDKを動的にインポート
+    const stripe = require('stripe')(stripeSecretKey);
+    
+    // Checkout Sessionを作成
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: 'jpy',
+          product_data: {
+            name: `ステルスAI ${plan.name}プラン`,
+            description: `${plan.points}ポイント`,
+          },
+          unit_amount: plan.price,
+        },
+        quantity: 1,
+      }],
+      mode: 'payment',
+      success_url: `${req.headers.origin || 'https://stealth-ai-web-new.onrender.com'}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin || 'https://stealth-ai-web-new.onrender.com'}?payment=cancelled`,
+      metadata: {
+        userId: req.dbUser.id.toString(),
+        firebaseUid: req.user.uid,
+        planId: planId,
+        points: plan.points.toString(),
+      },
+      customer_email: req.user.email,
+    });
+    
+    console.log('[Stripe] Checkout session created:', session.id);
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('[Stripe] Create session error:', error.message);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// Stripe Webhook（決済完了通知）
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  
+  if (!stripeSecretKey) {
+    console.error('[Stripe Webhook] STRIPE_SECRET_KEY not configured');
+    return res.status(500).json({ error: 'Stripe not configured' });
+  }
+  
+  const stripe = require('stripe')(stripeSecretKey);
+  const sig = req.headers['stripe-signature'];
+  
+  let event;
+  
+  try {
+    if (webhookSecret) {
+      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    } else {
+      // Webhookシークレットがない場合は直接パース（テスト用）
+      event = JSON.parse(req.body.toString());
+    }
+  } catch (err) {
+    console.error('[Stripe Webhook] Signature verification failed:', err.message);
+    return res.status(400).json({ error: 'Webhook signature verification failed' });
+  }
+  
+  // 決済完了イベントを処理
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const { userId, planId, points, firebaseUid } = session.metadata || {};
+    
+    console.log('[Stripe Webhook] Payment completed:', {
+      sessionId: session.id,
+      userId,
+      planId,
+      points,
+    });
+    
+    if (userId && points && pool) {
+      try {
+        const pointsNum = parseInt(points, 10);
+        const plan = STRIPE_PLANS[planId];
+        
+        // ポイントを追加し、有料会員フラグを立てる
+        const result = await pool.query(
+          `UPDATE stealth_users 
+           SET points = points + $1, is_premium = TRUE, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $2
+           RETURNING points`,
+          [pointsNum, parseInt(userId, 10)]
+        );
+        
+        if (result.rows.length > 0) {
+          const newBalance = result.rows[0].points;
+          
+          // ポイント履歴に記録
+          await pool.query(
+            `INSERT INTO stealth_point_history (user_id, change_amount, balance_after, reason, description)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [parseInt(userId, 10), pointsNum, newBalance, 'purchase', `${plan?.name || planId}プラン購入`]
+          );
+          
+          // 購入履歴に記録（テーブルがあれば）
+          try {
+            await pool.query(
+              `INSERT INTO stealth_purchases (user_id, stripe_payment_intent_id, stripe_checkout_session_id, amount_yen, points_granted, plan_name, status, completed_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
+              [parseInt(userId, 10), session.payment_intent, session.id, plan?.price || 0, pointsNum, planId, 'completed']
+            );
+          } catch (e) {
+            // テーブルがない場合は無視
+            console.log('[Stripe Webhook] stealth_purchases table not found, skipping');
+          }
+          
+          console.log('[Stripe Webhook] Points added:', { userId, pointsNum, newBalance });
+        }
+      } catch (error) {
+        console.error('[Stripe Webhook] Failed to add points:', error.message);
+      }
+    }
+  }
+  
+  res.json({ received: true });
+});
+
+// 決済成功後のセッション確認
+app.get('/api/stripe/session/:sessionId', checkUserAuth, async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeSecretKey) {
+    return res.status(500).json({ error: 'Stripe not configured' });
+  }
+  
+  try {
+    const stripe = require('stripe')(stripeSecretKey);
+    const session = await stripe.checkout.sessions.retrieve(req.params.sessionId);
+    
+    // ユーザーのセッションか確認
+    if (session.metadata?.firebaseUid !== req.user.uid) {
+      return res.status(403).json({ error: 'Not your session' });
+    }
+    
+    res.json({
+      status: session.payment_status,
+      planId: session.metadata?.planId,
+      points: parseInt(session.metadata?.points || '0', 10),
+    });
+  } catch (error) {
+    console.error('[Stripe] Get session error:', error.message);
+    res.status(500).json({ error: 'Failed to get session' });
   }
 });
 
