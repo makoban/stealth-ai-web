@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -47,51 +48,104 @@ app.post('/api/whisper', upload.single('file'), async (req, res) => {
   });
 
   try {
-    // FormDataを構築
-    const FormData = (await import('form-data')).default;
-    const formData = new FormData();
+    // multipart/form-data を手動で構築
+    const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
     
-    formData.append('file', req.file.buffer, {
-      filename: 'audio.wav',
-      contentType: req.file.mimetype || 'audio/wav',
-    });
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'ja'); // 日本語固定
-    formData.append('response_format', 'verbose_json');
+    const parts = [];
     
-    // プロンプトがあれば追加
+    // ファイルパート
+    parts.push(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n` +
+      `Content-Type: ${req.file.mimetype || 'audio/wav'}\r\n\r\n`
+    );
+    parts.push(req.file.buffer);
+    parts.push('\r\n');
+    
+    // modelパート
+    parts.push(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="model"\r\n\r\n` +
+      `whisper-1\r\n`
+    );
+    
+    // languageパート（日本語固定）
+    parts.push(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="language"\r\n\r\n` +
+      `ja\r\n`
+    );
+    
+    // response_formatパート
+    parts.push(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="response_format"\r\n\r\n` +
+      `verbose_json\r\n`
+    );
+    
+    // プロンプトパート（オプション）
     if (req.body.prompt) {
-      formData.append('prompt', req.body.prompt.slice(0, 400));
+      const truncatedPrompt = req.body.prompt.slice(0, 400);
+      parts.push(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="prompt"\r\n\r\n` +
+        `${truncatedPrompt}\r\n`
+      );
     }
+    
+    // 終端
+    parts.push(`--${boundary}--\r\n`);
+    
+    // Bufferを結合
+    const bodyParts = parts.map(part => 
+      typeof part === 'string' ? Buffer.from(part, 'utf-8') : part
+    );
+    const body = Buffer.concat(bodyParts);
 
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        ...formData.getHeaders(),
-      },
-      body: formData,
+    // HTTPSリクエストを送信
+    const responseData = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: 'api.openai.com',
+        port: 443,
+        path: '/v1/audio/transcriptions',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length,
+        },
+      };
+
+      const request = https.request(options, (response) => {
+        let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            try {
+              resolve(JSON.parse(data));
+            } catch (e) {
+              reject(new Error(`JSON parse error: ${data}`));
+            }
+          } else {
+            reject(new Error(`API error ${response.statusCode}: ${data}`));
+          }
+        });
+      });
+
+      request.on('error', reject);
+      request.write(body);
+      request.end();
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[Proxy] Whisper API error:', response.status, errorText);
-      return res.status(response.status).json({ 
-        error: `Whisper API error: ${response.status}`,
-        details: errorText 
-      });
-    }
-
-    const data = await response.json();
     console.log('[Proxy] Whisper success:', { 
-      textLength: data.text?.length || 0,
-      duration: data.duration 
+      textLength: responseData.text?.length || 0,
+      duration: responseData.duration 
     });
     
-    res.json(data);
+    res.json(responseData);
   } catch (error) {
-    console.error('[Proxy] Whisper error:', error);
-    res.status(500).json({ error: 'Whisper API request failed', details: String(error) });
+    console.error('[Proxy] Whisper error:', error.message);
+    res.status(500).json({ error: 'Whisper API request failed', details: error.message });
   }
 });
 
