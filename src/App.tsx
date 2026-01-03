@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { UserMenu } from './components/UserMenu';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
 // AssemblyAIは日本語非対応のため削除済み
 import {
@@ -24,7 +25,7 @@ import {
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.57';
+const APP_VERSION = 'v2.0';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -487,6 +488,7 @@ export default function App() {
           />
         </div>
         <div className="header-right">
+          <UserMenu />
           <div className="api-usage" onClick={() => setShowSettings(true)}>
             <span>API: {apiUsage.gemini.callCount + apiUsage.whisper.callCount}回</span>
             <span>${apiUsage.totalCost.toFixed(4)}</span>

@@ -1,5 +1,6 @@
 // OpenAI Whisper API for speech recognition (サーバー経由)
 import { addWhisperUsage } from './gemini';
+import { getIdToken } from './firebase';
 
 // PCMデータをWAVファイルに変換
 function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
@@ -38,11 +39,24 @@ function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+// ポイント不足エラー
+export class InsufficientPointsError extends Error {
+  remaining: number;
+  required: number;
+  
+  constructor(remaining: number, required: number) {
+    super('ポイントが不足しています');
+    this.name = 'InsufficientPointsError';
+    this.remaining = remaining;
+    this.required = required;
+  }
+}
+
 // 音声データをサーバー経由でWhisper APIに送信して文字起こし
 export async function transcribeAudio(
   audioBlob: Blob,
   prompt?: string // 固有名詞や専門用語のヒント（最大224トークン）
-): Promise<{ text: string; duration: number }> {
+): Promise<{ text: string; duration: number; points?: number }> {
   console.log('[Whisper] Sending audio via server proxy:', {
     type: audioBlob.type,
     size: audioBlob.size,
@@ -61,11 +75,25 @@ export async function transcribeAudio(
     console.log('[Whisper] Using prompt:', truncatedPrompt.slice(0, 100) + '...');
   }
 
+  // 認証トークンを取得
+  const headers: HeadersInit = {};
+  const token = await getIdToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   // サーバー経由でAPIを呼び出し（APIキーはサーバー側で管理）
   const response = await fetch('/api/whisper', {
     method: 'POST',
+    headers,
     body: formData,
   });
+
+  // ポイント不足エラー
+  if (response.status === 402) {
+    const error = await response.json();
+    throw new InsufficientPointsError(error.remaining, error.required);
+  }
 
   if (!response.ok) {
     const error = await response.text();
@@ -82,6 +110,7 @@ export async function transcribeAudio(
   return {
     text: data.text || '',
     duration,
+    points: data._points, // サーバーから返されるポイント残高
   };
 }
 

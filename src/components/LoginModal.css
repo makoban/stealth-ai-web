@@ -1,0 +1,193 @@
+/* ログインモーダルのスタイル */
+
+.login-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.login-modal {
+  background: #1a1a2e;
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 360px;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.login-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.login-modal-close:hover {
+  color: #fff;
+}
+
+.login-modal-title {
+  margin: 0 0 20px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+  text-align: center;
+}
+
+.login-modal-error {
+  background: rgba(255, 82, 82, 0.15);
+  border: 1px solid rgba(255, 82, 82, 0.3);
+  color: #ff5252;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.login-modal-success {
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  color: #4caf50;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.login-modal-field {
+  margin-bottom: 16px;
+}
+
+.login-modal-field label {
+  display: block;
+  color: #aaa;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.login-modal-field input {
+  width: 100%;
+  padding: 12px 14px;
+  background: #0f0f1a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.login-modal-field input:focus {
+  border-color: #4a9eff;
+}
+
+.login-modal-field input::placeholder {
+  color: #555;
+}
+
+.login-modal-button {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #4a9eff, #6c5ce7);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+
+.login-modal-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.login-modal-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.login-modal-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-modal-links {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.login-modal-links button {
+  background: none;
+  border: none;
+  color: #4a9eff;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.login-modal-links button:hover {
+  text-decoration: underline;
+}
+
+.login-modal-note {
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+  margin-top: 16px;
+}
+
+.login-modal-mfa-info {
+  color: #aaa;
+  font-size: 13px;
+  text-align: center;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* reCAPTCHAコンテナ（非表示） */
+#recaptcha-container {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+}
+
+/* iPhone対応 */
+@media (max-width: 480px) {
+  .login-modal {
+    padding: 20px;
+    border-radius: 12px;
+  }
+  
+  .login-modal-title {
+    font-size: 18px;
+  }
+  
+  .login-modal-field input {
+    padding: 14px;
+    font-size: 16px; /* iOSでズームを防ぐ */
+  }
+  
+  .login-modal-button {
+    padding: 16px;
+    font-size: 16px;
+  }
+}

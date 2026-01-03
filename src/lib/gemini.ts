@@ -1,5 +1,19 @@
 // Gemini APIキー（環境変数またはデフォルト値）
 // APIキーはサーバー側で管理（フロントには露出しない）
+import { getIdToken } from './firebase';
+
+// ポイント不足エラー
+export class InsufficientPointsError extends Error {
+  remaining: number;
+  required: number;
+  
+  constructor(remaining: number, required: number) {
+    super('ポイントが不足しています');
+    this.name = 'InsufficientPointsError';
+    this.remaining = remaining;
+    this.required = required;
+  }
+}
 
 // 知識レベルの型
 export type KnowledgeLevel = 'elementary' | 'middle' | 'high' | 'university' | 'expert';
@@ -158,16 +172,29 @@ async function callGemini(prompt: string): Promise<string> {
   apiUsageStats.inputTokens += inputTokens;
   apiUsageStats.callCount++;
 
+  // 認証トークンを取得
+  const headers: HeadersInit = { 'Content-Type': 'application/json' };
+  const token = await getIdToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   // サーバー経由でAPIを呼び出し（APIキーはサーバー側で管理）
   const response = await fetch('/api/gemini', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       prompt,
       temperature: 0.3,
       maxOutputTokens: 2048,
     }),
   });
+
+  // ポイント不足エラー
+  if (response.status === 402) {
+    const error = await response.json();
+    throw new InsufficientPointsError(error.remaining, error.required);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
