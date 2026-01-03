@@ -28,7 +28,8 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.10';
+const APP_VERSION = 'v3.11';
+const APP_NAME = 'KUROKO +';
 
 
 
@@ -81,6 +82,9 @@ interface SummaryEntry {
   context?: string;      // 会話の場面予想
   participants?: string; // 参加者予想
   purpose?: string;      // 会話の目的予想
+  clarity?: number;      // 明瞭度（0-1）
+  detailedTopic?: string;    // 詳細トピック
+  predictedWords?: string[]; // 予測単語
   timestamp: Date;
 }
 
@@ -304,15 +308,28 @@ export default function App() {
   // プチ記憶と完全記憶を結合
   const combinedMemoryContent = [petitMemoryContent, fullMemoryContent].filter(Boolean).join('\n\n');
   
-  // Whisperプロンプトを構築（TXTキーワード・ジャンルキーワード・検出済み固有名詞から）
+  // Whisperプロンプトを構築（動的プロンプト: 要約内容・予測単語・詳細トピックを含む）
   useEffect(() => {
+    // 最新の要約から動的プロンプト情報を取得
+    const latestSummary = summaryHistory.length > 0 ? summaryHistory[0] : null;
+    const summaryContext = latestSummary?.summary || '';
+    const predictedWords = latestSummary?.predictedWords || [];
+    const detailedTopic = latestSummary?.detailedTopic || '';
+    
     // TXT読み込み時に生成したキーワードを優先使用
-    const prompt = buildWhisperPrompt(teachFileKeywords || combinedMemoryContent, genreKeywords, detectedNounsRef.current);
+    const prompt = buildWhisperPrompt(
+      teachFileKeywords || combinedMemoryContent,
+      genreKeywords,
+      detectedNounsRef.current,
+      summaryContext,
+      predictedWords,
+      detailedTopic
+    );
     setWhisperPrompt(prompt);
-    console.log('[App] Whisper prompt updated:', prompt.slice(0, 100) + '...');
-  }, [combinedMemoryContent, teachFileKeywords, genreKeywords]);
+    console.log('[App] Dynamic Whisper prompt updated:', prompt.slice(0, 100) + '...');
+  }, [combinedMemoryContent, teachFileKeywords, genreKeywords, summaryHistory]);
 
-  // 要約を更新
+  // 要約を更新（過去3会話+現在の会話を分析）
   const updateSummary = useCallback(async (conversation: string) => {
     console.log('[App] updateSummary called, length:', conversation.length);
     if (conversation.length < 50) {
@@ -321,10 +338,15 @@ export default function App() {
     }
 
     try {
+      // 過去3会話を取得（最新3件の会話テキスト）
+      const recentConversations = conversations
+        .slice(-3)
+        .map(c => c.text);
+      
       const result = await summarizeConversation(
         conversation,
         conversationSummaryRef.current?.summary || null,
-        
+        recentConversations,
       );
 
       if (result.summary) {
@@ -336,6 +358,9 @@ export default function App() {
             context: result.context,
             participants: result.participants,
             purpose: result.purpose,
+            clarity: result.clarity,
+            detailedTopic: result.detailedTopic,
+            predictedWords: result.predictedWords,
             timestamp: new Date(),
           };
           return [newEntry, ...prev.slice(0, 4)];
@@ -344,7 +369,7 @@ export default function App() {
     } catch (e) {
       console.error('Summary error:', e);
     }
-  }, []);
+  }, [conversations]);
 
   // ジャンルを推定
   const updateGenre = useCallback(async (conversation: string) => {
@@ -598,7 +623,7 @@ export default function App() {
   if (!isSupported) {
     return (
       <div className="app unsupported">
-        <h1>🎤 ステルスAI</h1>
+        <h1>🎤 {APP_NAME}</h1>
         <p>このブラウザは音声認識をサポートしていません。</p>
         <p>Chrome、Safari、またはEdgeをお使いください。</p>
       </div>
@@ -610,7 +635,7 @@ export default function App() {
       {/* ヘッダー */}
       <header className="header">
         <div className="header-left">
-          <h1>🌟 ステルスAI</h1>
+          <h1>🌟 {APP_NAME}</h1>
           <span className="version-badge">{APP_VERSION}</span>
           <div
             className="connection-indicator"
@@ -621,8 +646,8 @@ export default function App() {
           <UserMenu />
 
           {currentGenre && currentGenre.confidence > 0.5 && (
-            <span className="genre-badge" title={`キーワード: ${currentGenre.keywords.join(', ')}\n${currentGenre.context}`}>
-              🎯 {currentGenre.primary}
+            <span className="genre-badge" title={`大カテゴリ: ${currentGenre.primary}\nキーワード: ${currentGenre.keywords.join(', ')}\n${currentGenre.context}`}>
+              🎯 {currentGenre.detailedGenre || currentGenre.primary}
               {currentGenre.secondary.length > 0 && <span className="genre-sub">+{currentGenre.secondary.length}</span>}
             </span>
           )}
@@ -719,6 +744,29 @@ export default function App() {
               ) : (
                 [...summaryHistory].reverse().map((entry, index) => (
                   <div key={index} className="summary-entry animate-fadeIn">
+                    {/* 明瞭度バー */}
+                    {entry.clarity !== undefined && (
+                      <div className="clarity-bar">
+                        <span className="clarity-label">明瞭度:</span>
+                        <div className="clarity-track">
+                          <div 
+                            className="clarity-fill" 
+                            style={{ 
+                              width: `${entry.clarity * 100}%`,
+                              backgroundColor: entry.clarity > 0.7 ? '#4CAF50' : entry.clarity > 0.4 ? '#FF9800' : '#f44336'
+                            }} 
+                          />
+                        </div>
+                        <span className="clarity-value">{Math.round(entry.clarity * 100)}%</span>
+                      </div>
+                    )}
+                    {/* 詳細トピック */}
+                    {entry.detailedTopic && (
+                      <div className="detailed-topic">
+                        <span className="detailed-topic-icon">🎯</span>
+                        <span className="detailed-topic-text">{entry.detailedTopic}</span>
+                      </div>
+                    )}
                     <p className="summary-text">{entry.summary}</p>
                     {entry.topics.length > 0 && (
                       <div className="topics">
@@ -732,6 +780,17 @@ export default function App() {
                         {entry.context && <span className="prediction-item">🎬 {entry.context}</span>}
                         {entry.participants && <span className="prediction-item">👥 {entry.participants}</span>}
                         {entry.purpose && <span className="prediction-item">🎯 {entry.purpose}</span>}
+                      </div>
+                    )}
+                    {/* 予測単語 */}
+                    {entry.predictedWords && entry.predictedWords.length > 0 && (
+                      <div className="predicted-words">
+                        <span className="predicted-words-label">🔮 次に出そうな単語:</span>
+                        <div className="predicted-words-list">
+                          {entry.predictedWords.map((word, i) => (
+                            <span key={i} className="predicted-word-tag">{word}</span>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

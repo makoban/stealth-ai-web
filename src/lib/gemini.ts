@@ -147,6 +147,9 @@ export interface ConversationSummary {
   context?: string;      // 会話の状況予想（例：会議、雑談、講義など）
   participants?: string; // 参加者の予想（例：上司と部下、友人同士など）
   purpose?: string;      // 会話の目的予想（例：情報共有、意思決定など）
+  clarity?: number;      // 明瞭度（0-1）
+  predictedWords?: string[]; // 次に出てきそうな単語の予測
+  detailedTopic?: string;    // 詳細トピック（例：スポーツ→中日ドラゴンズ）
 }
 
 // 修正された会話の型
@@ -405,41 +408,90 @@ export async function explainProperNoun(
   }
 }
 
-// 会話を要約
+// 会話を要約（過去3会話+現在の会話を分析、明瞭度・予想単語・詳細トピックを含む）
 export async function summarizeConversation(
   conversation: string,
   previousSummary: string | null,
+  recentConversations?: string[], // 過去3会話のテキスト
 ): Promise<ConversationSummary> {
   console.log('[Gemini] summarizeConversation called, conversation length:', conversation.length);
+  
+  // 過去3会話のコンテキストを構築
+  const recentContext = recentConversations && recentConversations.length > 0
+    ? `【過去の会話（古い順）】:
+${recentConversations.map((c, i) => `${i + 1}. "${c.slice(0, 100)}${c.length > 100 ? '...' : ''}"`).join('\n')}
+
+`
+    : '';
+  
   const prompt = previousSummary
     ? `前回の要約: "${previousSummary}"
 
-新しい会話内容: "${conversation}"
+${recentContext}【現在の会話】: "${conversation}"
 
-前回の要約を踏まえて、会話全体を要約してください。`
-    : `会話内容: "${conversation}"
+前回の要約と過去の会話の流れを踏まえて、会話全体を要約してください。`
+    : `${recentContext}【現在の会話】: "${conversation}"
 
 この会話を要約してください。`;
 
   const fullPrompt = `${prompt}
 
-また、会話の状況を予想してください：
-- これは何の場面か（会議、雑談、講義、商談、インタビューなど）
-- 誰が話しているか（上司と部下、友人同士、先生と生徒、営業と顧客など）
-- 会話の目的は何か（情報共有、意思決定、問題解決、アイデア出しなど）
+【分析項目】
+1. 会話の状況を予想：
+   - これは何の場面か（会議、雑談、講義、商談、インタビューなど）
+   - 誰が話しているか（上司と部下、友人同士、先生と生徒など）
+   - 会話の目的は何か（情報共有、意思決定、問題解決など）
+
+2. 明瞭度（clarity）を評価：
+   - 0.0～1.0のスコアで、会話の内容がどの程度明確かを評価
+   - 1.0: 非常に明確、内容が完全に理解できる
+   - 0.5: まあまあ明確、大体の内容は分かる
+   - 0.0: 不明確、何について話しているか分からない
+
+3. 詳細トピック（detailedTopic）を推定：
+   - 大カテゴリではなく、具体的なトピックを推定
+   - 例: 「スポーツ」→「中日ドラゴンズ」「大谷翔平」
+   - 例: 「政治」→「衆議院選挙」「岩田内閣」
+   - 例: 「テクノロジー」→「iPhone 16」「OpenAI」
+
+4. 次に出てきそうな単語（predictedWords）を予測：
+   - 会話の流れから、次に出てきそうな固有名詞・専門用語を予測
+   - 音声認識の精度向上に使用するため、具体的な単語を予測
+   - 5～10個程度
 
 JSON形式で回答してください:
-{"summary": "要約（50文字以内）", "topics": ["トピック1", "トピック2"], "keyPoints": ["ポイント1", "ポイント2"], "context": "会話の場面", "participants": "参加者の予想", "purpose": "会話の目的"}`;
+{
+  "summary": "要約（50文字以内）",
+  "topics": ["トピック1", "トピック2"],
+  "keyPoints": ["ポイント1", "ポイント2"],
+  "context": "会話の場面",
+  "participants": "参加者の予想",
+  "purpose": "会話の目的",
+  "clarity": 0.8,
+  "detailedTopic": "具体的なトピック（例: 中日ドラゴンズ、衆議院選挙）",
+  "predictedWords": ["予測単語1", "予測単語2", "予測単語3"]
+}`;
 
   try {
     const response = await callGemini(fullPrompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const result = JSON.parse(jsonMatch[0]);
+      return {
+        summary: result.summary || '',
+        topics: result.topics || [],
+        keyPoints: result.keyPoints || [],
+        context: result.context || '',
+        participants: result.participants || '',
+        purpose: result.purpose || '',
+        clarity: result.clarity || 0.5,
+        detailedTopic: result.detailedTopic || '',
+        predictedWords: result.predictedWords || [],
+      };
     }
-    return { summary: '', topics: [], keyPoints: [], context: '', participants: '', purpose: '' };
+    return { summary: '', topics: [], keyPoints: [], context: '', participants: '', purpose: '', clarity: 0.5, detailedTopic: '', predictedWords: [] };
   } catch {
-    return { summary: '', topics: [], keyPoints: [], context: '', participants: '', purpose: '' };
+    return { summary: '', topics: [], keyPoints: [], context: '', participants: '', purpose: '', clarity: 0.5, detailedTopic: '', predictedWords: [] };
   }
 }
 
@@ -475,8 +527,9 @@ JSON形式で回答してください:
 
 // 会話ジャンルの型
 export interface ConversationGenre {
-  primary: string;           // 主要ジャンル
+  primary: string;           // 主要ジャンル（例: スポーツ）
   secondary: string[];       // 副次的ジャンル
+  detailedGenre: string;     // 詳細ジャンル（例: 中日ドラゴンズ、衆議院選挙）
   confidence: number;        // 確信度
   keywords: string[];        // 検出されたキーワード
   context: string;           // ジャンルに基づくコンテキスト説明
@@ -504,7 +557,7 @@ export const GENRE_LIST = [
 
 export type GenreType = typeof GENRE_LIST[number];
 
-// 会話からジャンルを推定
+// 会話からジャンルを推定（詳細ジャンル対応: スポーツ→中日ドラゴンズなど）
 export async function detectConversationGenre(
   conversation: string,
   previousGenres: string[] | null,
@@ -529,13 +582,21 @@ ${genreListStr}
 【指示】
 1. 最も適切な主要ジャンルを1つ選んでください
 2. 関連する副次的ジャンルを0〜2個選んでください
-3. ジャンル判定の根拠となるキーワードを抽出してください
-4. このジャンルに基づく会話のコンテキストを説明してください
+3. 【重要】詳細ジャンル（detailedGenre）を推定してください:
+   - 大カテゴリではなく、具体的なトピックを推定
+   - 例: 「スポーツ」→「中日ドラゴンズ」「大谷翔平」「プロ野球」
+   - 例: 「政治・経済」→「衆議院選挙」「岩田内閣」「日銀政策」
+   - 例: 「テクノロジー・IT」→「iPhone 16」「OpenAI」「ChatGPT」
+   - 例: 「音楽・エンタメ」→「乃木坂46」「米津玄師」「紅白歌合戦」
+   - 例: 「食べ物・グルメ」→「ラーメン二郎」「ミシュラン」
+4. ジャンル判定の根拠となるキーワードを抽出してください
+5. このジャンルに基づく会話のコンテキストを説明してください
 
 JSON形式で回答してください:
 {
   "primary": "主要ジャンル",
   "secondary": ["副次的ジャンル1", "副次的ジャンル2"],
+  "detailedGenre": "具体的なトピック（例: 中日ドラゴンズ、衆議院選挙）",
   "confidence": 0.8,
   "keywords": ["キーワード1", "キーワード2"],
   "context": "このジャンルに基づくコンテキスト説明"
@@ -551,11 +612,18 @@ JSON形式で回答してください:
         result.primary = '日常会話';
       }
       result.secondary = (result.secondary || []).filter((g: string) => GENRE_LIST.includes(g as GenreType));
-      return result;
+      return {
+        primary: result.primary,
+        secondary: result.secondary || [],
+        detailedGenre: result.detailedGenre || result.primary,
+        confidence: result.confidence || 0.5,
+        keywords: result.keywords || [],
+        context: result.context || '',
+      };
     }
-    return { primary: '日常会話', secondary: [], confidence: 0.3, keywords: [], context: 'ジャンル判定失敗' };
+    return { primary: '日常会話', secondary: [], detailedGenre: '日常会話', confidence: 0.3, keywords: [], context: 'ジャンル判定失敗' };
   } catch {
-    return { primary: '日常会話', secondary: [], confidence: 0.3, keywords: [], context: 'ジャンル判定エラー' };
+    return { primary: '日常会話', secondary: [], detailedGenre: '日常会話', confidence: 0.3, keywords: [], context: 'ジャンル判定エラー' };
   }
 }
 
@@ -913,38 +981,53 @@ ${detectedHint}
   }
 }
 
-// Whisper用のプロンプトを構築
+// Whisper用のプロンプトを構築（動的プロンプト: 要約内容と予測単語を含む）
 export function buildWhisperPrompt(
   teachContent: string,
   genreKeywords: string,
-  detectedNouns: string[]
+  detectedNouns: string[],
+  _summaryContext?: string,     // 要約内容（将来の拡張用、現在は未使用）
+  predictedWords?: string[],    // 予測単語（動的プロンプト）
+  detailedTopic?: string        // 詳細トピック（動的プロンプト）
 ): string {
   const parts: string[] = [];
   
-  // 教えるファイルの内容から固有名詞を抽出（最優先）
+  // 1. 詳細トピック（最優先: 中日ドラゴンズ、衆議院選挙など）
+  if (detailedTopic && detailedTopic.trim()) {
+    parts.push(detailedTopic);
+    console.log('[Whisper] Adding detailed topic:', detailedTopic);
+  }
+  
+  // 2. 予測単語（要約から予測された単語）
+  if (predictedWords && predictedWords.length > 0) {
+    parts.push(predictedWords.slice(0, 10).join('、'));
+    console.log('[Whisper] Adding predicted words:', predictedWords.slice(0, 5).join(', '));
+  }
+  
+  // 3. 教えるファイルの内容から固有名詞を抽出
   if (teachContent && teachContent.trim()) {
     // 簡易的に固有名詞っぽい部分を抽出（カタカナ、漢字の連続など）
-    const nouns = teachContent.match(/[ァ-ヶー]+|[一-龯]+[ァ-ヶー]*|[A-Za-z]+/g);
+    const nouns = teachContent.match(/[ァ-ヶー]+|[一-龥]+[ァ-ヶー]*|[A-Za-z]+/g);
     if (nouns && nouns.length > 0) {
-      const uniqueNouns = [...new Set(nouns)].slice(0, 30);
+      const uniqueNouns = [...new Set(nouns)].slice(0, 20);
       parts.push(uniqueNouns.join('、'));
     }
   }
   
-  // ジャンル別キーワード
+  // 4. ジャンル別キーワード
   if (genreKeywords && genreKeywords.trim()) {
-    parts.push(genreKeywords.slice(0, 200));
+    parts.push(genreKeywords.slice(0, 150));
   }
   
-  // 既に検出された固有名詞
+  // 5. 既に検出された固有名詞
   if (detectedNouns.length > 0) {
-    parts.push(detectedNouns.slice(0, 15).join('、'));
+    parts.push(detectedNouns.slice(0, 10).join('、'));
   }
   
   // 結合して400文字に制限（Whisperの224トークン制限に対応）
   const combined = parts.join('、').slice(0, 400);
   
-  console.log('[Whisper] Built prompt:', combined.slice(0, 100) + '...');
+  console.log('[Whisper] Built dynamic prompt:', combined.slice(0, 100) + '...');
   return combined;
 }
 

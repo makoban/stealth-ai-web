@@ -1368,3 +1368,107 @@
   color: var(--text-secondary);
   margin-top: 4px;
 }
+
+
+/* 明瞭度バー */
+.clarity-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+
+.clarity-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.clarity-track {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.clarity-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.clarity-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 35px;
+  text-align: right;
+}
+
+/* 詳細トピック */
+.detailed-topic {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%);
+  border-radius: 8px;
+  color: white;
+}
+
+.detailed-topic-icon {
+  font-size: 14px;
+}
+
+.detailed-topic-text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 予測単語 */
+.predicted-words {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.predicted-words-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.predicted-words-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.predicted-word-tag {
+  background: var(--surface);
+  color: var(--text-primary);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  border: 1px solid var(--border);
+}
+
+/* 要約予測項目 */
+.summary-prediction {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.prediction-item {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--surface);
+  padding: 2px 8px;
+  border-radius: 8px;
+}
