@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { UserMenu } from './components/UserMenu';
 import { MemoryButton } from './components/MemoryButton';
+import { useAuth } from './contexts/AuthContext';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
 // AssemblyAIは日本語非対応のため削除済み
 import {
@@ -26,13 +27,9 @@ import {
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v2.2';
+const APP_VERSION = 'v2.3';
 
-// 音声認識エンジンの種類
-type SpeechEngine = 'whisper';
-const ENGINE_LABELS: Record<SpeechEngine, string> = {
-  whisper: 'Whisper',
-};
+
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -89,18 +86,13 @@ interface SummaryEntry {
 type ExpandedSection = 'none' | 'conversation' | 'summary' | 'lookup';
 
 export default function App() {
-  // 音声認識エンジン選択（現在はWhisperのみ）
-  const [speechEngine] = useState<SpeechEngine>('whisper');
-
+  // 認証情報を取得
+  const { user, userData } = useAuth();
+  
   // 音声増幅倍率（自動調整、初期値は最大）
   const [gainValue, setGainValue] = useState<number>(50);
 
   const [showSettings, setShowSettings] = useState(false);
-
-  // エンジン選択をローカルストレージに保存
-  useEffect(() => {
-    localStorage.setItem('speech_engine', speechEngine);
-  }, [speechEngine]);
 
   // Whisperプロンプト用（フック使用前に定義が必要）
   const [whisperPrompt, setWhisperPrompt] = useState<string>('');
@@ -432,6 +424,16 @@ export default function App() {
     if (isListening) {
       stopListening();
     } else {
+      // ログインチェック
+      if (!user) {
+        alert('ログインが必要です。右上の「ログイン」ボタンからログインしてください。');
+        return;
+      }
+      // ポイントチェック
+      if (!userData || userData.points <= 0) {
+        alert('ポイントが不足しています。ポイントを購入してください。');
+        return;
+      }
       startListening();
     }
   };
@@ -492,13 +494,10 @@ export default function App() {
         <div className="header-right">
           <UserMenu />
           <div className="api-usage" onClick={() => setShowSettings(true)}>
-            <span>API: {apiUsage.gemini.callCount + apiUsage.whisper.callCount}回</span>
-            <span>${apiUsage.totalCost.toFixed(4)}</span>
+            <span>{userData ? `${userData.points}pt` : 'ログインしてください'}</span>
             <button onClick={(e) => { e.stopPropagation(); resetAllUsageStats(); setApiUsage(getTotalApiUsageStats()); }} className="reset-btn">↻</button>
           </div>
-          <span className="engine-badge" onClick={() => setShowSettings(true)}>
-            🐬 {ENGINE_LABELS[speechEngine]}
-          </span>
+
           {currentGenre && currentGenre.confidence > 0.5 && (
             <span className="genre-badge" title={`キーワード: ${currentGenre.keywords.join(', ')}\n${currentGenre.context}`}>
               🎯 {currentGenre.primary}
@@ -716,16 +715,19 @@ export default function App() {
         <div className="modal-overlay" onClick={() => setShowSettings(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h2>⚙️ 設定</h2>
+
             <div className="setting-item">
-              <label>音声認識エンジン</label>
-              <p className="setting-info">Whisper (OpenAI) - 高精度な日本語認識</p>
+              <label>ポイント残高</label>
+              <div className="api-stats">
+                <p><strong>{userData ? `${userData.points}pt` : 'ログインしてください'}</strong></p>
+                <p className="setting-info">※ 1pt = 1円で購入可能</p>
+              </div>
             </div>
             <div className="setting-item">
-              <label>API使用状況</label>
+              <label>今回の使用状況</label>
               <div className="api-stats">
-                <p>Gemini: {apiUsage.gemini.callCount}回 (${apiUsage.gemini.estimatedCost.toFixed(4)})</p>
-                <p>Whisper: {apiUsage.whisper.callCount}回 ({(apiUsage.whisper.totalDurationSeconds / 60).toFixed(1)}分) (${apiUsage.whisper.estimatedCost.toFixed(4)})</p>
-                <p><strong>合計: ${apiUsage.totalCost.toFixed(4)}</strong></p>
+                <p>Gemini: {apiUsage.gemini.callCount}回</p>
+                <p>Whisper: {apiUsage.whisper.callCount}回 ({(apiUsage.whisper.totalDurationSeconds / 60).toFixed(1)}分)</p>
               </div>
             </div>
             <button onClick={() => setShowSettings(false)}>閉じる</button>
