@@ -218,9 +218,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     isProcessingRef.current = true;
     setProcessingStatus('Whisper APIに送信中...');
     
-    // 処理中は「...」を表示
-    const currentPending = pendingTextRef.current;
-    setInterimTranscript(currentPending ? currentPending + ' 🎤...' : '🎤 認識中...');
+    // 処理中は認識中を表示
+    setInterimTranscript('📝 認識中...');
 
     try {
       console.log('[Whisper] Sending to API with prompt...');
@@ -245,14 +244,16 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             return newTranscript;
           });
           
-          // リアルタイム欄にも表示（すぐ消える）
-          setInterimTranscript(newText);
+          // リアルタイム欄に結果を表示（✓付き）
+          setInterimTranscript(`✅ ${newText}`);
           setProcessingStatus('認識成功: ' + newText.substring(0, 20) + '...');
           
-          // 少し待ってリアルタイム欄をクリア
+          // 1.5秒後にリアルタイム欄をクリア（次の音声待機に戻る）
           setTimeout(() => {
-            setInterimTranscript('');
-          }, 500);
+            if (!isProcessingRef.current) {
+              setInterimTranscript('🎤 音声を待機中...');
+            }
+          }, 1500);
         }
       } else {
         setProcessingStatus('音声なし（無音）');
@@ -309,11 +310,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         const now = Date.now();
         
         if (isSpeaking) {
-          // 発話中
+          // 発話中 - リアルタイム表示を更新
           if (speechStartTimeRef.current === null) {
             speechStartTimeRef.current = now;
             console.log('[VAD] Speech started');
           }
+          // 発話中の秒数を表示
+          const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
+          setInterimTranscript(`🔊 聴いています... (${speechDuration}秒)`);
           silenceStartTimeRef.current = null;
           
           // VADタイムアウトをクリア
@@ -330,6 +334,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           }
         } else {
           // 無音
+          if (speechStartTimeRef.current === null && !isProcessingRef.current) {
+            // まだ発話が始まっていない
+            setInterimTranscript('🎤 音声を待機中...');
+          }
           if (speechStartTimeRef.current !== null) {
             // 発話後の無音
             if (silenceStartTimeRef.current === null) {
