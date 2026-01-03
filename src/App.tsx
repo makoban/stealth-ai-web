@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { UserMenu } from './components/UserMenu';
+import { MemoryButton } from './components/MemoryButton';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
 // AssemblyAIは日本語非対応のため削除済み
 import {
@@ -9,7 +10,7 @@ import {
   correctConversationWithGenre,
   detectConversationGenre,
   generateGenreKeywords,
-  generateKeywordsFromTeachFile,
+  // generateKeywordsFromTeachFileはMemoryButtonに移動
   buildWhisperPrompt,
   getTotalApiUsageStats,
   resetAllUsageStats,
@@ -25,7 +26,7 @@ import {
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v2.1';
+const APP_VERSION = 'v2.2';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -106,7 +107,7 @@ export default function App() {
   const [teachFileKeywords, setTeachFileKeywords] = useState<string>(''); // TXT読み込み時に生成、TXT変更まで維持
   const [genreKeywords, setGenreKeywords] = useState<string>('');
   const detectedNounsRef = useRef<string[]>([]); // 検出済み固有名詞
-  const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false); // キーワード生成中フラグ
+  const [isGeneratingKeywords] = useState(false); // キーワード生成中フラグ（MemoryButton内で管理）
 
   // Whisper API
   const whisper = useWhisperRecognition({
@@ -140,9 +141,10 @@ export default function App() {
   const setGain = whisper.setGain;
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
-  const [teachFileName, setTeachFileName] = useState<string>(''); // ファイル名（表示用）
+  // teachFileNameはMemoryButton内で管理するが、リセット時に使用するため残す
+  const [, setTeachFileName] = useState<string>(''); // ファイル名（表示用）
   const [teachContent, setTeachContent] = useState<string>(''); // ファイル内容（Geminiに渡す）
-  const teachFileInputRef = useRef<HTMLInputElement>(null);
+  // teachFileInputRefはMemoryButtonに移動
   const [showLevelSelector, setShowLevelSelector] = useState(false);
   const [conversations, setConversations] = useState<ConversationEntry[]>([]);
   const [lookedUpWords, setLookedUpWords] = useState<LookedUpWord[]>([]);
@@ -519,63 +521,29 @@ export default function App() {
 
       {/* メインコンテンツ */}
       <main className="main-content">
-        {/* 教える欄（TXTファイル読み込み） */}
+        {/* 記憶欄（プチ記憶・完全記憶） */}
         <div className="teach-container">
-          <input
-            type="file"
-            ref={teachFileInputRef}
-            accept=".txt"
-            style={{ display: 'none' }}
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                const reader = new FileReader();
-                reader.onload = async (event) => {
-                  const content = event.target?.result as string;
-                  setTeachContent(content);
-                  // ファイル名から.txtを除去
-                  const nameWithoutExt = file.name.replace(/\.txt$/i, '');
-                  setTeachFileName(nameWithoutExt);
-                  
-                  // TXT読み込み時にGeminiで関連キーワードを生成
-                  setIsGeneratingKeywords(true);
-                  try {
-                    const keywords = await generateKeywordsFromTeachFile(content);
-                    setTeachFileKeywords(keywords);
-                    console.log('[App] Generated keywords from teach file:', keywords.slice(0, 100) + '...');
-                  } catch (err) {
-                    console.error('[App] Failed to generate keywords:', err);
-                  } finally {
-                    setIsGeneratingKeywords(false);
-                  }
-                };
-                reader.readAsText(file);
+          <MemoryButton
+            onContentChange={(content, keywords, source) => {
+              setTeachContent(content);
+              if (keywords) {
+                setTeachFileKeywords(keywords);
               }
-            }}
-          />
-          <button
-            className={`teach-btn ${teachFileName ? 'has-file' : ''} ${isGeneratingKeywords ? 'generating' : ''}`}
-            onClick={() => teachFileInputRef.current?.click()}
-            disabled={isGeneratingKeywords}
-          >
-            {isGeneratingKeywords ? '🔄 学習中...' : `📚 ${teachFileName || '教える'}`}
-            {teachFileName && !isGeneratingKeywords && <span className="teach-indicator">✓</span>}
-          </button>
-          {teachFileName && (
-            <button
-              className="teach-clear-btn"
-              onClick={() => {
+              if (source === 'full') {
+                setTeachFileName(localStorage.getItem('stealth_full_memory_name') || '');
+              } else {
                 setTeachFileName('');
-                setTeachContent('');
-                setTeachFileKeywords(''); // キーワードもクリア
-                if (teachFileInputRef.current) {
-                  teachFileInputRef.current.value = '';
-                }
-              }}
-            >
-              ×
-            </button>
-          )}
+              }
+              console.log(`[App] Memory content updated from ${source}:`, content.slice(0, 50) + '...');
+            }}
+            onClear={() => {
+              setTeachFileName('');
+              setTeachContent('');
+              setTeachFileKeywords('');
+            }}
+            currentContent={teachContent}
+            isGeneratingKeywords={isGeneratingKeywords}
+          />
         </div>
 
         {/* リアルタイム欄（OpenAI出力をそのまま表示） */}

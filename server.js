@@ -671,6 +671,81 @@ app.post('/api/gemini', checkUserAuth, async (req, res) => {
 });
 
 // ===========================================
+// プチ記憶API（保存・取得）
+// ===========================================
+
+// プチ記憶を取得
+app.get('/api/memory/petit', checkUserAuth, async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  if (!pool || !req.dbUser) {
+    return res.json({ content: '', summary: '' });
+  }
+  
+  try {
+    const result = await pool.query(
+      'SELECT content, summary FROM stealth_petit_memory WHERE user_id = $1',
+      [req.dbUser.id]
+    );
+    
+    if (result.rows.length > 0) {
+      res.json(result.rows[0]);
+    } else {
+      res.json({ content: '', summary: '' });
+    }
+  } catch (error) {
+    console.error('[API] /memory/petit GET error:', error.message);
+    res.status(500).json({ error: 'Failed to get petit memory' });
+  }
+});
+
+// プチ記憶を保存
+app.post('/api/memory/petit', checkUserAuth, async (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  
+  if (!pool || !req.dbUser) {
+    return res.json({ success: true, message: 'Database not configured' });
+  }
+  
+  const { content, summary } = req.body;
+  
+  // 200文字制限
+  if (content && content.length > 200) {
+    return res.status(400).json({ error: 'Content exceeds 200 characters' });
+  }
+  
+  try {
+    if (!content || content.trim() === '') {
+      // 空の場合は削除
+      await pool.query(
+        'DELETE FROM stealth_petit_memory WHERE user_id = $1',
+        [req.dbUser.id]
+      );
+      res.json({ success: true, deleted: true });
+    } else {
+      // UPSERT（存在すれば更新、なければ挿入）
+      await pool.query(
+        `INSERT INTO stealth_petit_memory (user_id, content, summary, updated_at)
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+         ON CONFLICT (user_id) DO UPDATE SET
+           content = EXCLUDED.content,
+           summary = EXCLUDED.summary,
+           updated_at = CURRENT_TIMESTAMP`,
+        [req.dbUser.id, content, summary || '']
+      );
+      res.json({ success: true });
+    }
+  } catch (error) {
+    console.error('[API] /memory/petit POST error:', error.message);
+    res.status(500).json({ error: 'Failed to save petit memory' });
+  }
+});
+
+// ===========================================
 // AssemblyAI トークン取得（既存）
 // ===========================================
 app.get('/api/assemblyai/token', checkUserAuth, async (req, res) => {
