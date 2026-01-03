@@ -1,4 +1,4 @@
-// プチ記憶・完全記憶ボタンコンポーネント（2つのボタンに分離）
+// プチ記憶・フル記憶ボタンコンポーネント（2つのボタンに分離）
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getIdToken } from '../lib/firebase';
@@ -29,12 +29,12 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
   const [isSavingPetit, setIsSavingPetit] = useState(false);
   const [showPetitModal, setShowPetitModal] = useState(false);
   
-  // 完全記憶
+  // フル記憶
   const [fullFileName, setFullFileName] = useState('');
   const [isGeneratingKeywords, setIsGeneratingKeywords] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // 初期化: ログイン時にプチ記憶をDBから読み込み、完全記憶をlocalStorageから読み込み
+  // 初期化: ログイン時にプチ記憶をDBから読み込み、フル記憶をlocalStorageから読み込み
   useEffect(() => {
     if (user) {
       loadPetitMemory();
@@ -65,7 +65,7 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
     }
   };
   
-  // 完全記憶のパスをlocalStorageから読み込み
+  // フル記憶のパスをlocalStorageから読み込み
   const loadFullMemoryPath = () => {
     const savedName = localStorage.getItem('stealth_full_memory_name');
     if (savedName) {
@@ -141,7 +141,7 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
     }
   };
   
-  // 完全記憶ファイルを選択
+  // フル記憶ファイルを選択
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -171,7 +171,7 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
     reader.readAsText(file);
   };
   
-  // 完全記憶をクリア
+  // フル記憶をクリア
   const clearFullMemory = () => {
     localStorage.removeItem('stealth_full_memory_name');
     localStorage.removeItem('stealth_full_memory_path');
@@ -198,7 +198,7 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
           )}
         </div>
         
-        {/* 完全記憶ボタン */}
+        {/* フル記憶ボタン */}
         <div className="memory-btn-wrapper">
           <input
             type="file"
@@ -212,7 +212,7 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
             onClick={() => fileInputRef.current?.click()}
             disabled={isGeneratingKeywords}
           >
-            {isGeneratingKeywords ? '🔄 学習中...' : `📚 ${fullFileName || '完全記憶'}`}
+            {isGeneratingKeywords ? '🔄 学習中...' : `📚 ${fullFileName || 'フル記憶'}`}
           </button>
           {fullContent && !isGeneratingKeywords && (
             <button className="memory-clear-btn" onClick={clearFullMemory}>×</button>

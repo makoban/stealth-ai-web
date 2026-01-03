@@ -42,15 +42,33 @@ let recaptchaVerifier: RecaptchaVerifier | null = null;
 let confirmationResult: ConfirmationResult | null = null;
 
 export function initRecaptcha(containerId: string): RecaptchaVerifier {
+  // 既存のreCAPTCHAをクリア
   if (recaptchaVerifier) {
-    recaptchaVerifier.clear();
+    try {
+      recaptchaVerifier.clear();
+    } catch (e) {
+      console.log('[Firebase] reCAPTCHA clear error (ignored):', e);
+    }
+    recaptchaVerifier = null;
   }
+  
+  // コンテナ要素が存在するか確認
+  const container = document.getElementById(containerId);
+  if (!container) {
+    console.error('[Firebase] reCAPTCHA container not found:', containerId);
+    throw new Error('reCAPTCHA container not found');
+  }
+  
   recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
     size: 'invisible',
     callback: () => {
       console.log('[Firebase] reCAPTCHA verified');
     },
+    'expired-callback': () => {
+      console.log('[Firebase] reCAPTCHA expired');
+    },
   });
+  
   return recaptchaVerifier;
 }
 
@@ -153,6 +171,11 @@ export async function completeSmsMfaEnrollment(
 
 // 電話番号でSMS認証コードを送信
 export async function sendPhoneVerificationCode(phoneNumber: string): Promise<void> {
+  // reCAPTCHAが初期化されていない場合は自動初期化
+  if (!recaptchaVerifier) {
+    initRecaptcha('recaptcha-container');
+  }
+  
   if (!recaptchaVerifier) {
     throw new Error('reCAPTCHA not initialized');
   }
@@ -165,7 +188,17 @@ export async function sendPhoneVerificationCode(phoneNumber: string): Promise<vo
     formattedNumber = '+81' + phoneNumber;
   }
   
-  confirmationResult = await signInWithPhoneNumber(auth, formattedNumber, recaptchaVerifier);
+  console.log('[Firebase] Sending SMS to:', formattedNumber);
+  
+  try {
+    confirmationResult = await signInWithPhoneNumber(auth, formattedNumber, recaptchaVerifier);
+    console.log('[Firebase] SMS sent successfully');
+  } catch (error: any) {
+    console.error('[Firebase] SMS send error:', error);
+    // reCAPTCHAをリセットして再試行できるように
+    recaptchaVerifier = null;
+    throw error;
+  }
 }
 
 // SMS認証コードを検証してログイン/登録

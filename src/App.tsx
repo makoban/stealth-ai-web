@@ -27,7 +27,7 @@ import {
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v2.4';
+const APP_VERSION = 'v2.5';
 
 
 
@@ -159,6 +159,30 @@ export default function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // ログアウト時にすべての表示項目をクリア
+  useEffect(() => {
+    if (!user) {
+      // ログアウト時に状態をリセット
+      setConversations([]);
+      setLookedUpWords([]);
+      setSummaryHistory([]);
+      setFullConversation('');
+      setCurrentGenre(null);
+      setPetitMemoryContent('');
+      setFullMemoryContent('');
+      setTeachFileKeywords('');
+      setGenreKeywords('');
+      setWhisperPrompt('');
+      detectedNounsRef.current = [];
+      lastProcessedTranscript.current = '';
+      conversationSummaryRef.current = null;
+      processedWordsRef.current = new Set();
+      lastGenreUpdateRef.current = 0;
+      clearTranscript();
+      console.log('[App] Logged out - all state cleared');
+    }
+  }, [user, clearTranscript]);
 
   // 増幅倍率の変更をフックに反映
   useEffect(() => {
@@ -494,9 +518,6 @@ export default function App() {
         </div>
         <div className="header-right">
           <UserMenu />
-          <span className="points-badge" onClick={() => setShowSettings(true)}>
-            {userData ? `${userData.points}pt` : 'ログイン'}
-          </span>
 
           {currentGenre && currentGenre.confidence > 0.5 && (
             <span className="genre-badge" title={`キーワード: ${currentGenre.keywords.join(', ')}\n${currentGenre.context}`}>
