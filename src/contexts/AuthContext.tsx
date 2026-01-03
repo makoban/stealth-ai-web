@@ -15,6 +15,8 @@ import {
   enrollSmsMfa,
   completeSmsMfaEnrollment,
   hasMfaEnrolled,
+  sendPhoneVerificationCode,
+  verifyPhoneCode,
 } from '../lib/firebase';
 
 interface UserData {
@@ -43,6 +45,9 @@ interface AuthContextType {
   enrollMfa: (phoneNumber: string) => Promise<string>;
   completeMfaEnrollment: (verificationId: string, code: string) => Promise<void>;
   hasMfa: boolean;
+  // 電話番号認証
+  sendPhoneCode: (phoneNumber: string) => Promise<void>;
+  verifyPhone: (code: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -217,6 +222,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // 電話番号認証コード送信
+  const sendPhoneCode = async (phoneNumber: string) => {
+    setError(null);
+    setLoading(true);
+    
+    try {
+      // reCAPTCHAを初期化
+      initRecaptcha('recaptcha-container');
+      await sendPhoneVerificationCode(phoneNumber);
+    } catch (err: any) {
+      setError(getErrorMessage(err));
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 電話番号認証コード検証
+  const verifyPhone = async (code: string) => {
+    setError(null);
+    setLoading(true);
+    
+    try {
+      await verifyPhoneCode(code);
+      await fetchUserData();
+    } catch (err: any) {
+      setError(getErrorMessage(err));
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ユーザーデータを更新
   const refreshUserData = async () => {
     await fetchUserData();
@@ -245,6 +283,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         enrollMfa,
         completeMfaEnrollment,
         hasMfa,
+        sendPhoneCode,
+        verifyPhone,
       }}
     >
       {children}

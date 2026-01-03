@@ -13,6 +13,8 @@ import {
   multiFactor,
   PhoneMultiFactorGenerator,
   getMultiFactorResolver,
+  signInWithPhoneNumber,
+  ConfirmationResult,
   User,
   MultiFactorError,
   MultiFactorResolver,
@@ -37,6 +39,7 @@ auth.languageCode = 'ja';
 
 // reCAPTCHA verifier（SMS認証用）
 let recaptchaVerifier: RecaptchaVerifier | null = null;
+let confirmationResult: ConfirmationResult | null = null;
 
 export function initRecaptcha(containerId: string): RecaptchaVerifier {
   if (recaptchaVerifier) {
@@ -148,6 +151,34 @@ export async function completeSmsMfaEnrollment(
   await multiFactor(user).enroll(multiFactorAssertion, displayName || 'Phone');
 }
 
+// 電話番号でSMS認証コードを送信
+export async function sendPhoneVerificationCode(phoneNumber: string): Promise<void> {
+  if (!recaptchaVerifier) {
+    throw new Error('reCAPTCHA not initialized');
+  }
+  
+  // 日本の電話番号を国際形式に変換
+  let formattedNumber = phoneNumber;
+  if (phoneNumber.startsWith('0')) {
+    formattedNumber = '+81' + phoneNumber.slice(1);
+  } else if (!phoneNumber.startsWith('+')) {
+    formattedNumber = '+81' + phoneNumber;
+  }
+  
+  confirmationResult = await signInWithPhoneNumber(auth, formattedNumber, recaptchaVerifier);
+}
+
+// SMS認証コードを検証してログイン/登録
+export async function verifyPhoneCode(code: string): Promise<User> {
+  if (!confirmationResult) {
+    throw new Error('No confirmation result');
+  }
+  
+  const userCredential = await confirmationResult.confirm(code);
+  confirmationResult = null;
+  return userCredential.user;
+}
+
 // ログアウト
 export async function logOut(): Promise<void> {
   await signOut(auth);
@@ -201,6 +232,10 @@ export function getErrorMessage(error: any): string {
     'auth/code-expired': '認証コードの有効期限が切れました',
     'auth/credential-already-in-use': 'この認証情報は既に別のアカウントで使用されています',
     'auth/requires-recent-login': 'この操作にはログインし直す必要があります',
+    'auth/invalid-phone-number': '電話番号の形式が正しくありません',
+    'auth/missing-phone-number': '電話番号を入力してください',
+    'auth/quota-exceeded': 'SMS送信の上限に達しました。しばらく待ってから再試行してください',
+    'auth/captcha-check-failed': 'reCAPTCHAの検証に失敗しました',
   };
   return messages[code] || error?.message || '不明なエラーが発生しました';
 }

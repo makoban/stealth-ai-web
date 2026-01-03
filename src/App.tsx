@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { UserMenu } from './components/UserMenu';
-import { MemoryButton } from './components/MemoryButton';
+import { MemoryButtons } from './components/MemoryButtons';
 import { useAuth } from './contexts/AuthContext';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
 // AssemblyAIは日本語非対応のため削除済み
@@ -27,7 +27,7 @@ import {
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v2.3';
+const APP_VERSION = 'v2.4';
 
 
 
@@ -99,7 +99,6 @@ export default function App() {
   const [teachFileKeywords, setTeachFileKeywords] = useState<string>(''); // TXT読み込み時に生成、TXT変更まで維持
   const [genreKeywords, setGenreKeywords] = useState<string>('');
   const detectedNounsRef = useRef<string[]>([]); // 検出済み固有名詞
-  const [isGeneratingKeywords] = useState(false); // キーワード生成中フラグ（MemoryButton内で管理）
 
   // Whisper API
   const whisper = useWhisperRecognition({
@@ -133,10 +132,9 @@ export default function App() {
   const setGain = whisper.setGain;
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
-  // teachFileNameはMemoryButton内で管理するが、リセット時に使用するため残す
-  const [, setTeachFileName] = useState<string>(''); // ファイル名（表示用）
-  const [teachContent, setTeachContent] = useState<string>(''); // ファイル内容（Geminiに渡す）
-  // teachFileInputRefはMemoryButtonに移動
+  // プチ記憶・完全記憶の内容
+  const [petitMemoryContent, setPetitMemoryContent] = useState<string>('');
+  const [fullMemoryContent, setFullMemoryContent] = useState<string>('');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
   const [conversations, setConversations] = useState<ConversationEntry[]>([]);
   const [lookedUpWords, setLookedUpWords] = useState<LookedUpWord[]>([]);
@@ -185,13 +183,16 @@ export default function App() {
     }
   }, [audioLevel, isListening, gainValue, isClipping]);
 
+  // プチ記憶と完全記憶を結合
+  const combinedMemoryContent = [petitMemoryContent, fullMemoryContent].filter(Boolean).join('\n\n');
+  
   // Whisperプロンプトを構築（TXTキーワード・ジャンルキーワード・検出済み固有名詞から）
   useEffect(() => {
     // TXT読み込み時に生成したキーワードを優先使用
-    const prompt = buildWhisperPrompt(teachFileKeywords || teachContent, genreKeywords, detectedNounsRef.current);
+    const prompt = buildWhisperPrompt(teachFileKeywords || combinedMemoryContent, genreKeywords, detectedNounsRef.current);
     setWhisperPrompt(prompt);
     console.log('[App] Whisper prompt updated:', prompt.slice(0, 100) + '...');
-  }, [teachContent, teachFileKeywords, genreKeywords]);
+  }, [combinedMemoryContent, teachFileKeywords, genreKeywords]);
 
   // 要約を更新
   const updateSummary = useCallback(async (conversation: string) => {
@@ -257,7 +258,7 @@ export default function App() {
         try {
           const keywords = await generateGenreKeywords(
             genre,
-            teachContent,
+            combinedMemoryContent,
             detectedNounsRef.current,
             
           );
@@ -272,7 +273,7 @@ export default function App() {
     } finally {
       setIsDetectingGenre(false);
     }
-  }, [currentGenre, isDetectingGenre, teachContent]);
+  }, [currentGenre, isDetectingGenre, combinedMemoryContent]);
 
   // テキストを処理（Gemini整形、拡張固有名詞検出）- 会話欄移動時に呼ばれる
   const processText = useCallback(async (text: string) => {
@@ -284,7 +285,7 @@ export default function App() {
 
     try {
       // 会話をGeminiで整形（文脈・ジャンル・教えるファイルを考慮して正確な日本語に）
-      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, teachContent);
+      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, combinedMemoryContent);
 
       const entry: ConversationEntry = {
         id: Date.now().toString(),
@@ -377,7 +378,7 @@ export default function App() {
     } catch (e) {
       console.error('Detection error:', e);
     }
-  }, [fullConversation, knowledgeLevel, currentGenre, teachContent]);
+  }, [fullConversation, knowledgeLevel, currentGenre, combinedMemoryContent]);
 
   // transcript変更を監視（リアルタイム欄から会話欄に移動したとき）
   useEffect(() => {
@@ -493,10 +494,9 @@ export default function App() {
         </div>
         <div className="header-right">
           <UserMenu />
-          <div className="api-usage" onClick={() => setShowSettings(true)}>
-            <span>{userData ? `${userData.points}pt` : 'ログインしてください'}</span>
-            <button onClick={(e) => { e.stopPropagation(); resetAllUsageStats(); setApiUsage(getTotalApiUsageStats()); }} className="reset-btn">↻</button>
-          </div>
+          <span className="points-badge" onClick={() => setShowSettings(true)}>
+            {userData ? `${userData.points}pt` : 'ログイン'}
+          </span>
 
           {currentGenre && currentGenre.confidence > 0.5 && (
             <span className="genre-badge" title={`キーワード: ${currentGenre.keywords.join(', ')}\n${currentGenre.context}`}>
@@ -522,26 +522,28 @@ export default function App() {
       <main className="main-content">
         {/* 記憶欄（プチ記憶・完全記憶） */}
         <div className="teach-container">
-          <MemoryButton
-            onContentChange={(content, keywords, source) => {
-              setTeachContent(content);
+          <MemoryButtons
+            onPetitChange={(content) => {
+              setPetitMemoryContent(content);
+              console.log('[App] Petit memory updated:', content.slice(0, 50) + '...');
+            }}
+            onFullChange={(content, keywords) => {
+              setFullMemoryContent(content);
               if (keywords) {
                 setTeachFileKeywords(keywords);
               }
-              if (source === 'full') {
-                setTeachFileName(localStorage.getItem('stealth_full_memory_name') || '');
+              console.log('[App] Full memory updated:', content.slice(0, 50) + '...');
+            }}
+            onClear={(type) => {
+              if (type === 'petit') {
+                setPetitMemoryContent('');
               } else {
-                setTeachFileName('');
+                setFullMemoryContent('');
+                setTeachFileKeywords('');
               }
-              console.log(`[App] Memory content updated from ${source}:`, content.slice(0, 50) + '...');
             }}
-            onClear={() => {
-              setTeachFileName('');
-              setTeachContent('');
-              setTeachFileKeywords('');
-            }}
-            currentContent={teachContent}
-            isGeneratingKeywords={isGeneratingKeywords}
+            petitContent={petitMemoryContent}
+            fullContent={fullMemoryContent}
           />
         </div>
 

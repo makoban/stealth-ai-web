@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import './LoginModal.css';
 
-type AuthMode = 'login' | 'signup' | 'reset' | 'mfa' | 'mfa-enroll';
+type AuthMode = 'login' | 'signup' | 'phone-signup' | 'phone-verify' | 'reset';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -15,23 +15,21 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     signIn,
     signUp,
     sendPasswordReset,
+    sendPhoneCode,
+    verifyPhone,
     error,
     clearError,
     loading,
-    mfaRequired,
-    sendMfaCode,
-    verifyMfaCode,
   } = useAuth();
 
-  const [mode, setMode] = useState<AuthMode>('login');
+  const [mode, setMode] = useState<AuthMode>('phone-signup');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
-  const [verificationId, setVerificationId] = useState('');
   const [localError, setLocalError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [mfaCodeSent, setMfaCodeSent] = useState(false);
 
   if (!isOpen) return null;
 
@@ -39,15 +37,16 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     setEmail('');
     setPassword('');
     setConfirmPassword('');
+    setPhoneNumber('');
     setVerificationCode('');
     setLocalError('');
     setSuccessMessage('');
-    setMode('login');
-    setMfaCodeSent(false);
+    setMode('phone-signup');
     clearError();
     onClose();
   };
 
+  // メール/パスワードでログイン
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError('');
@@ -55,16 +54,13 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     
     try {
       await signIn(email, password);
-      if (!mfaRequired) {
-        handleClose();
-      } else {
-        setMode('mfa');
-      }
+      handleClose();
     } catch (err) {
       // エラーはAuthContextで処理される
     }
   };
 
+  // メール/パスワードで新規登録
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError('');
@@ -82,15 +78,60 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     
     try {
       await signUp(email, password);
-      setSuccessMessage('アカウントを作成しました。確認メールを送信しました。');
+      setSuccessMessage('アカウントを作成しました！');
       setTimeout(() => {
         handleClose();
-      }, 2000);
+      }, 1500);
     } catch (err) {
       // エラーはAuthContextで処理される
     }
   };
 
+  // 電話番号でSMS送信
+  const handleSendPhoneCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalError('');
+    setSuccessMessage('');
+    
+    // 電話番号のバリデーション
+    const cleanPhone = phoneNumber.replace(/[-\s]/g, '');
+    if (!/^0[789]0\d{8}$/.test(cleanPhone) && !/^\+81[789]0\d{8}$/.test(cleanPhone)) {
+      setLocalError('正しい携帯電話番号を入力してください（例: 09012345678）');
+      return;
+    }
+    
+    try {
+      await sendPhoneCode(cleanPhone);
+      setMode('phone-verify');
+      setSuccessMessage('認証コードを送信しました');
+    } catch (err) {
+      // エラーはAuthContextで処理される
+    }
+  };
+
+  // SMS認証コードを検証
+  const handleVerifyPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalError('');
+    setSuccessMessage('');
+    
+    if (verificationCode.length !== 6) {
+      setLocalError('6桁の認証コードを入力してください');
+      return;
+    }
+    
+    try {
+      await verifyPhone(verificationCode);
+      setSuccessMessage('登録完了！500ポイントをプレゼントしました');
+      setTimeout(() => {
+        handleClose();
+      }, 1500);
+    } catch (err) {
+      // エラーはAuthContextで処理される
+    }
+  };
+
+  // パスワードリセット
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError('');
@@ -99,29 +140,6 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     try {
       await sendPasswordReset(email);
       setSuccessMessage('パスワードリセットメールを送信しました');
-    } catch (err) {
-      // エラーはAuthContextで処理される
-    }
-  };
-
-  const handleSendMfaCode = async () => {
-    setLocalError('');
-    try {
-      const id = await sendMfaCode();
-      setVerificationId(id);
-      setMfaCodeSent(true);
-    } catch (err: any) {
-      setLocalError(err.message || 'SMSの送信に失敗しました');
-    }
-  };
-
-  const handleVerifyMfaCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLocalError('');
-    
-    try {
-      await verifyMfaCode(verificationId, verificationCode);
-      handleClose();
     } catch (err) {
       // エラーはAuthContextで処理される
     }
@@ -136,9 +154,10 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
         
         <h2 className="login-modal-title">
           {mode === 'login' && 'ログイン'}
-          {mode === 'signup' && '新規登録'}
+          {mode === 'signup' && '新規登録（メール）'}
+          {mode === 'phone-signup' && '新規登録 / ログイン'}
+          {mode === 'phone-verify' && 'SMS認証'}
           {mode === 'reset' && 'パスワードリセット'}
-          {mode === 'mfa' && 'SMS認証'}
         </h2>
 
         {displayError && (
@@ -149,7 +168,64 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
           <div className="login-modal-success">{successMessage}</div>
         )}
 
-        {/* ログインフォーム */}
+        {/* 電話番号認証（メイン） */}
+        {mode === 'phone-signup' && (
+          <form onSubmit={handleSendPhoneCode}>
+            <div className="login-modal-field">
+              <label>携帯電話番号</label>
+              <input
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="09012345678"
+                required
+                autoComplete="tel"
+              />
+              <p className="login-modal-hint">SMSで認証コードを送信します</p>
+            </div>
+            <button type="submit" className="login-modal-button" disabled={loading}>
+              {loading ? '送信中...' : '認証コードを送信'}
+            </button>
+            <div className="login-modal-links">
+              <button type="button" onClick={() => setMode('login')}>
+                メールでログイン
+              </button>
+            </div>
+            <p className="login-modal-note">
+              新規登録で500ポイントプレゼント！
+            </p>
+          </form>
+        )}
+
+        {/* SMS認証コード入力 */}
+        {mode === 'phone-verify' && (
+          <form onSubmit={handleVerifyPhone}>
+            <div className="login-modal-field">
+              <label>認証コード（6桁）</label>
+              <input
+                type="text"
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="123456"
+                maxLength={6}
+                required
+                autoComplete="one-time-code"
+                inputMode="numeric"
+              />
+              <p className="login-modal-hint">{phoneNumber} に送信しました</p>
+            </div>
+            <button type="submit" className="login-modal-button" disabled={loading}>
+              {loading ? '確認中...' : '確認'}
+            </button>
+            <div className="login-modal-links">
+              <button type="button" onClick={() => setMode('phone-signup')}>
+                電話番号を変更
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* メール/パスワードでログイン */}
         {mode === 'login' && (
           <form onSubmit={handleLogin}>
             <div className="login-modal-field">
@@ -178,8 +254,11 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               {loading ? 'ログイン中...' : 'ログイン'}
             </button>
             <div className="login-modal-links">
+              <button type="button" onClick={() => setMode('phone-signup')}>
+                電話番号で登録
+              </button>
               <button type="button" onClick={() => setMode('signup')}>
-                新規登録
+                メールで新規登録
               </button>
               <button type="button" onClick={() => setMode('reset')}>
                 パスワードを忘れた
@@ -188,7 +267,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
           </form>
         )}
 
-        {/* 新規登録フォーム */}
+        {/* メール/パスワードで新規登録 */}
         {mode === 'signup' && (
           <form onSubmit={handleSignUp}>
             <div className="login-modal-field">
@@ -228,6 +307,9 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               {loading ? '登録中...' : '登録する'}
             </button>
             <div className="login-modal-links">
+              <button type="button" onClick={() => setMode('phone-signup')}>
+                電話番号で登録
+              </button>
               <button type="button" onClick={() => setMode('login')}>
                 ログインに戻る
               </button>
@@ -238,7 +320,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
           </form>
         )}
 
-        {/* パスワードリセットフォーム */}
+        {/* パスワードリセット */}
         {mode === 'reset' && (
           <form onSubmit={handlePasswordReset}>
             <div className="login-modal-field">
@@ -258,54 +340,6 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
             <div className="login-modal-links">
               <button type="button" onClick={() => setMode('login')}>
                 ログインに戻る
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* MFA認証フォーム */}
-        {mode === 'mfa' && (
-          <form onSubmit={handleVerifyMfaCode}>
-            <p className="login-modal-mfa-info">
-              登録された電話番号にSMSで認証コードを送信します
-            </p>
-            
-            {!mfaCodeSent ? (
-              <button
-                type="button"
-                className="login-modal-button"
-                onClick={handleSendMfaCode}
-                disabled={loading}
-              >
-                {loading ? '送信中...' : '認証コードを送信'}
-              </button>
-            ) : (
-              <>
-                <div className="login-modal-field">
-                  <label>認証コード（6桁）</label>
-                  <input
-                    type="text"
-                    value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value)}
-                    placeholder="123456"
-                    maxLength={6}
-                    pattern="[0-9]{6}"
-                    required
-                    autoComplete="one-time-code"
-                  />
-                </div>
-                <button type="submit" className="login-modal-button" disabled={loading}>
-                  {loading ? '確認中...' : '確認'}
-                </button>
-              </>
-            )}
-            
-            <div className="login-modal-links">
-              <button type="button" onClick={() => {
-                setMode('login');
-                setMfaCodeSent(false);
-              }}>
-                キャンセル
               </button>
             </div>
           </form>

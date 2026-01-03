@@ -59,23 +59,20 @@
   gap: 12px;
 }
 
-.api-usage {
+.points-badge {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  background: rgba(255, 255, 255, 0.2);
-  padding: 4px 8px;
-  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.25);
+  padding: 6px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
 }
 
-.reset-btn {
-  background: none;
-  border: none;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px;
+.points-badge:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .level-btn {
@@ -442,9 +439,9 @@
     font-size: 16px;
   }
   
-  .api-usage {
-    font-size: 10px;
-    padding: 3px 6px;
+  .points-badge {
+    font-size: 11px;
+    padding: 4px 8px;
   }
   
   .level-btn {
@@ -948,22 +945,6 @@
   gap: 4px;
 }
 
-
-/* エンジンバッジ */
-.engine-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.engine-badge:hover {
-  transform: scale(1.05);
-}
 
 /* ジャンルバッジ */
 .genre-badge {

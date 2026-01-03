@@ -102,6 +102,12 @@
   color: #555;
 }
 
+.login-modal-hint {
+  color: #888;
+  font-size: 11px;
+  margin-top: 6px;
+}
+
 .login-modal-button {
   width: 100%;
   padding: 14px;
