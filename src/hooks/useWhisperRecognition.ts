@@ -133,7 +133,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [processingStatus, setProcessingStatus] = useState<string>('');
 
   const recorderRef = useRef<AudioRecorder | null>(null);
-  const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
   
@@ -236,12 +235,24 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           console.log('[Whisper] Filtered hallucination:', newText);
           setProcessingStatus('ノイズ除去（幻覚フィルタ）');
         } else {
-          // リアルタイム欄にOpenAI出力をそのまま追加（整形なし）
-          pendingTextRef.current = pendingTextRef.current 
-            ? pendingTextRef.current + ' ' + newText 
-            : newText;
-          setInterimTranscript(pendingTextRef.current);
+          // 認識成功時は即座に会話欄に移動
+          console.log('[Whisper] Recognized text:', newText);
+          
+          // 会話欄に追加（生のOpenAI出力、整形はApp.tsx側で行う）
+          setTranscript((prev) => {
+            const newTranscript = prev ? prev + '\n' + newText : newText;
+            console.log('[Whisper] New transcript:', newTranscript);
+            return newTranscript;
+          });
+          
+          // リアルタイム欄にも表示（すぐ消える）
+          setInterimTranscript(newText);
           setProcessingStatus('認識成功: ' + newText.substring(0, 20) + '...');
+          
+          // 少し待ってリアルタイム欄をクリア
+          setTimeout(() => {
+            setInterimTranscript('');
+          }, 500);
         }
       } else {
         setProcessingStatus('音声なし（無音）');
@@ -259,24 +270,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, [silenceThreshold]);
 
-  // 一定時間ごとにリアルタイム欄から会話欄に移動
-  const flushToTranscript = useCallback(() => {
-    if (pendingTextRef.current && pendingTextRef.current.trim()) {
-      const textToFlush = pendingTextRef.current.trim();
-      console.log('[Whisper] Flushing to transcript:', textToFlush);
-      
-      // 会話欄に追加（生のOpenAI出力、整形はApp.tsx側で行う）
-      setTranscript((prev) => {
-        const newTranscript = prev ? prev + '\n' + textToFlush : textToFlush;
-        console.log('[Whisper] New transcript:', newTranscript);
-        return newTranscript;
-      });
-      
-      // リアルタイム欄をクリア
-      pendingTextRef.current = '';
-      setInterimTranscript('');
-    }
-  }, []);
+  // 認識成功時に即座に会話欄に移動するので、定期的なflushは不要
 
   const startListening = useCallback(async () => {
     if (!isSupported) {
@@ -366,12 +360,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setProcessingStatus('解析中');
 
       // VADのみで動作（固定間隔なし）
-      // バックアップ用の定期処理は削除
-
-      // 6秒ごとにリアルタイム欄から会話欄に移動
-      flushIntervalRef.current = setInterval(() => {
-        flushToTranscript();
-      }, 6000);
+      // 認識成功時に即座に会話欄に移動するのでflush不要
 
     } catch (e) {
       console.error('[Whisper] Failed to start:', e);
@@ -379,17 +368,12 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('idle');
       setProcessingStatus('');
     }
-  }, [isSupported, currentGain, processAudio, flushToTranscript]);
+  }, [isSupported, currentGain, processAudio]);
 
   const stopListening = useCallback(async () => {
     setState('stopping');
     setProcessingStatus('停止中...');
 
-    // インターバルを停止
-    if (flushIntervalRef.current) {
-      clearInterval(flushIntervalRef.current);
-      flushIntervalRef.current = null;
-    }
     // VADタイムアウトをクリア
     if (vadTimeoutRef.current) {
       clearTimeout(vadTimeoutRef.current);
@@ -423,8 +407,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       recorderRef.current = null;
     }
 
-    // 残りのテキストを会話欄に移動
-    flushToTranscript();
+    // 認識成功時に即座に会話欄に移動するので、flush不要
 
     setState('idle');
     setInterimTranscript('');
@@ -433,7 +416,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setProcessingStatus('');
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
-  }, [flushToTranscript, silenceThreshold]);
+  }, [silenceThreshold]);
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
@@ -444,9 +427,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   // クリーンアップ
   useEffect(() => {
     return () => {
-      if (flushIntervalRef.current) {
-        clearInterval(flushIntervalRef.current);
-      }
       if (vadTimeoutRef.current) {
         clearTimeout(vadTimeoutRef.current);
       }
