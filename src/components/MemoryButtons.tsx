@@ -208,9 +208,15 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
             onChange={handleFileSelect}
           />
           <button
-            className={`memory-btn full ${fullContent ? 'has-content' : ''} ${isGeneratingKeywords ? 'generating' : ''}`}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isGeneratingKeywords}
+            className={`memory-btn full ${fullContent ? 'has-content' : ''} ${isGeneratingKeywords ? 'generating' : ''} ${!user ? 'disabled' : ''}`}
+            onClick={() => {
+              if (!user) {
+                alert('ログインが必要です');
+                return;
+              }
+              fileInputRef.current?.click();
+            }}
+            disabled={isGeneratingKeywords || !user}
           >
             {isGeneratingKeywords ? '🔄 学習中...' : `📚 ${fullFileName || 'フル記憶'}`}
           </button>
