@@ -42,6 +42,24 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
     loadFullMemoryPath();
   }, [user]);
   
+  // 親コンポーネントからのリセットを検知（petitContentが空になったらリセット）
+  useEffect(() => {
+    if (petitContent === '') {
+      setPetitText('');
+      setPetitSummary('');
+    }
+  }, [petitContent]);
+  
+  // 親コンポーネントからのリセットを検知（fullContentが空になったらリセット）
+  useEffect(() => {
+    if (fullContent === '') {
+      setFullFileName('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [fullContent]);
+  
   // プチ記憶をDBから読み込み
   const loadPetitMemory = async () => {
     try {
