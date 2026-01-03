@@ -27,7 +27,7 @@ import {
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v2.6';
+const APP_VERSION = 'v2.7';
 
 
 
@@ -485,7 +485,14 @@ export default function App() {
     // Whisperプロンプト関連のリセット（ジャンルキーワードと検出済み固有名詞）
     setGenreKeywords('');
     detectedNounsRef.current = [];
-    // 教えるファイルはリセットしない（ユーザーが意図的に読み込んだものなので）
+    // 記憶もリセット
+    setPetitMemoryContent('');
+    setFullMemoryContent('');
+    setTeachFileKeywords('');
+    setWhisperPrompt('');
+    // localStorageのフル記憶もクリア
+    localStorage.removeItem('stealth_full_memory_name');
+    localStorage.removeItem('stealth_full_memory_path');
   };
 
   // 接続状態の色
