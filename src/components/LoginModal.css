@@ -161,6 +161,86 @@
   margin-top: 16px;
 }
 
+/* Googleログインボタン */
+.login-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.google-login-button {
+  width: 100%;
+  padding: 14px;
+  background: #fff;
+  border: none;
+  border-radius: 8px;
+  color: #333;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.google-login-button:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.google-login-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.google-login-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.google-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.login-divider span {
+  padding: 0 12px;
+  color: #888;
+  font-size: 13px;
+}
+
+.email-login-button {
+  width: 100%;
+  padding: 14px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.email-login-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
 .login-modal-mfa-info {
   color: #aaa;
   font-size: 13px;

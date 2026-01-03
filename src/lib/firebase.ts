@@ -8,16 +8,9 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail,
   sendEmailVerification,
-  PhoneAuthProvider,
-  RecaptchaVerifier,
-  multiFactor,
-  PhoneMultiFactorGenerator,
-  getMultiFactorResolver,
-  signInWithPhoneNumber,
-  ConfirmationResult,
+  GoogleAuthProvider,
+  signInWithPopup,
   User,
-  MultiFactorError,
-  MultiFactorResolver,
 } from 'firebase/auth';
 
 // Firebase設定
@@ -37,39 +30,17 @@ export const auth = getAuth(app);
 // 言語設定（日本語）
 auth.languageCode = 'ja';
 
-// reCAPTCHA verifier（SMS認証用）
-let recaptchaVerifier: RecaptchaVerifier | null = null;
-let confirmationResult: ConfirmationResult | null = null;
+// Google Auth Provider
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
 
-export function initRecaptcha(containerId: string): RecaptchaVerifier {
-  // 既存のreCAPTCHAをクリア
-  if (recaptchaVerifier) {
-    try {
-      recaptchaVerifier.clear();
-    } catch (e) {
-      console.log('[Firebase] reCAPTCHA clear error (ignored):', e);
-    }
-    recaptchaVerifier = null;
-  }
-  
-  // コンテナ要素が存在するか確認
-  const container = document.getElementById(containerId);
-  if (!container) {
-    console.error('[Firebase] reCAPTCHA container not found:', containerId);
-    throw new Error('reCAPTCHA container not found');
-  }
-  
-  recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-    size: 'invisible',
-    callback: () => {
-      console.log('[Firebase] reCAPTCHA verified');
-    },
-    'expired-callback': () => {
-      console.log('[Firebase] reCAPTCHA expired');
-    },
-  });
-  
-  return recaptchaVerifier;
+// Googleでログイン
+export async function signInWithGoogle(): Promise<User> {
+  const result = await signInWithPopup(auth, googleProvider);
+  console.log('[Firebase] Google sign in successful:', result.user.email);
+  return result.user;
 }
 
 // メール/パスワードでサインアップ
@@ -81,134 +52,8 @@ export async function signUpWithEmail(email: string, password: string): Promise<
 }
 
 // メール/パスワードでログイン
-export async function signInWithEmail(email: string, password: string): Promise<User | { resolver: MultiFactorResolver; error: MultiFactorError }> {
-  try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    return userCredential.user;
-  } catch (error: any) {
-    // MFA（多要素認証）が必要な場合
-    if (error.code === 'auth/multi-factor-auth-required') {
-      const resolver = getMultiFactorResolver(auth, error);
-      return { resolver, error };
-    }
-    throw error;
-  }
-}
-
-// SMS認証コードを送信（MFA用）
-export async function sendSmsVerificationCode(
-  resolver: MultiFactorResolver
-): Promise<string> {
-  if (!recaptchaVerifier) {
-    throw new Error('reCAPTCHA not initialized');
-  }
-  
-  const hint = resolver.hints[0];
-  const phoneAuthProvider = new PhoneAuthProvider(auth);
-  const verificationId = await phoneAuthProvider.verifyPhoneNumber(
-    {
-      multiFactorHint: hint,
-      session: resolver.session,
-    },
-    recaptchaVerifier
-  );
-  return verificationId;
-}
-
-// SMS認証コードを検証してログイン完了（MFA用）
-export async function verifySmsCode(
-  resolver: MultiFactorResolver,
-  verificationId: string,
-  verificationCode: string
-): Promise<User> {
-  const cred = PhoneAuthProvider.credential(verificationId, verificationCode);
-  const multiFactorAssertion = PhoneMultiFactorGenerator.assertion(cred);
-  const userCredential = await resolver.resolveSignIn(multiFactorAssertion);
-  return userCredential.user;
-}
-
-// SMS多要素認証を登録
-export async function enrollSmsMfa(phoneNumber: string): Promise<string> {
-  const user = auth.currentUser;
-  if (!user) {
-    throw new Error('Not logged in');
-  }
-  
-  if (!recaptchaVerifier) {
-    throw new Error('reCAPTCHA not initialized');
-  }
-
-  const multiFactorSession = await multiFactor(user).getSession();
-  const phoneAuthProvider = new PhoneAuthProvider(auth);
-  
-  const verificationId = await phoneAuthProvider.verifyPhoneNumber(
-    {
-      phoneNumber,
-      session: multiFactorSession,
-    },
-    recaptchaVerifier
-  );
-  
-  return verificationId;
-}
-
-// SMS多要素認証の登録を完了
-export async function completeSmsMfaEnrollment(
-  verificationId: string,
-  verificationCode: string,
-  displayName?: string
-): Promise<void> {
-  const user = auth.currentUser;
-  if (!user) {
-    throw new Error('Not logged in');
-  }
-  
-  const cred = PhoneAuthProvider.credential(verificationId, verificationCode);
-  const multiFactorAssertion = PhoneMultiFactorGenerator.assertion(cred);
-  
-  await multiFactor(user).enroll(multiFactorAssertion, displayName || 'Phone');
-}
-
-// 電話番号でSMS認証コードを送信
-export async function sendPhoneVerificationCode(phoneNumber: string): Promise<void> {
-  // reCAPTCHAが初期化されていない場合は自動初期化
-  if (!recaptchaVerifier) {
-    initRecaptcha('recaptcha-container');
-  }
-  
-  if (!recaptchaVerifier) {
-    throw new Error('reCAPTCHA not initialized');
-  }
-  
-  // 日本の電話番号を国際形式に変換
-  let formattedNumber = phoneNumber;
-  if (phoneNumber.startsWith('0')) {
-    formattedNumber = '+81' + phoneNumber.slice(1);
-  } else if (!phoneNumber.startsWith('+')) {
-    formattedNumber = '+81' + phoneNumber;
-  }
-  
-  console.log('[Firebase] Sending SMS to:', formattedNumber);
-  
-  try {
-    confirmationResult = await signInWithPhoneNumber(auth, formattedNumber, recaptchaVerifier);
-    console.log('[Firebase] SMS sent successfully');
-  } catch (error: any) {
-    console.error('[Firebase] SMS send error:', error);
-    // reCAPTCHAをリセットして再試行できるように
-    recaptchaVerifier = null;
-    throw error;
-  }
-}
-
-// SMS認証コードを検証してログイン/登録
-export async function verifyPhoneCode(code: string): Promise<User> {
-  if (!confirmationResult) {
-    throw new Error('No confirmation result');
-  }
-  
-  const userCredential = await confirmationResult.confirm(code);
-  confirmationResult = null;
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  const userCredential = await signInWithEmailAndPassword(auth, email, password);
   return userCredential.user;
 }
 
@@ -239,13 +84,6 @@ export async function getIdToken(): Promise<string | null> {
   return user.getIdToken();
 }
 
-// MFAが登録されているかチェック
-export function hasMfaEnrolled(): boolean {
-  const user = auth.currentUser;
-  if (!user) return false;
-  return multiFactor(user).enrolledFactors.length > 0;
-}
-
 // エラーメッセージを日本語に変換
 export function getErrorMessage(error: any): string {
   const code = error?.code || '';
@@ -260,15 +98,9 @@ export function getErrorMessage(error: any): string {
     'auth/invalid-credential': 'メールアドレスまたはパスワードが正しくありません',
     'auth/too-many-requests': 'リクエストが多すぎます。しばらく待ってから再試行してください',
     'auth/network-request-failed': 'ネットワークエラーが発生しました',
-    'auth/invalid-verification-code': '認証コードが正しくありません',
-    'auth/invalid-verification-id': '認証IDが無効です',
-    'auth/code-expired': '認証コードの有効期限が切れました',
-    'auth/credential-already-in-use': 'この認証情報は既に別のアカウントで使用されています',
-    'auth/requires-recent-login': 'この操作にはログインし直す必要があります',
-    'auth/invalid-phone-number': '電話番号の形式が正しくありません',
-    'auth/missing-phone-number': '電話番号を入力してください',
-    'auth/quota-exceeded': 'SMS送信の上限に達しました。しばらく待ってから再試行してください',
-    'auth/captcha-check-failed': 'reCAPTCHAの検証に失敗しました',
+    'auth/popup-closed-by-user': 'ログインがキャンセルされました',
+    'auth/cancelled-popup-request': 'ログインがキャンセルされました',
+    'auth/popup-blocked': 'ポップアップがブロックされました。ポップアップを許可してください',
   };
   return messages[code] || error?.message || '不明なエラーが発生しました';
 }

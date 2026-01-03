@@ -27,7 +27,7 @@ import {
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v2.8';
+const APP_VERSION = 'v2.9';
 
 
 
