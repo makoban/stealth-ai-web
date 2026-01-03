@@ -67,10 +67,12 @@ const API_COSTS = {
 };
 
 // コストからポイントを計算（0.25円 = 1pt）
+// 小数点4桁まで計算、表示時に整数に丸める
 function calculatePoints(costUsd) {
   const costYen = costUsd * USD_TO_YEN;
-  const points = Math.ceil(costYen / YEN_PER_POINT);
-  return Math.max(points, 1); // 最低1ポイント
+  const points = costYen / YEN_PER_POINT;
+  // 小数点4桁で丸める（0.0001pt単位）
+  return Math.round(points * 10000) / 10000;
 }
 
 // Whisperのポイント計算（音声の長さベース）
@@ -145,7 +147,10 @@ async function getOrCreateUser(firebaseUid, email, phoneNumber, displayName) {
         'UPDATE stealth_users SET last_login_at = CURRENT_TIMESTAMP WHERE firebase_uid = $1',
         [firebaseUid]
       );
-      return existingUser.rows[0];
+      // DECIMALは文字列で返ってくるのでparseFloat
+      const user = existingUser.rows[0];
+      user.points = parseFloat(user.points);
+      return user;
     }
     
     // 新規ユーザー作成
@@ -171,7 +176,7 @@ async function getOrCreateUser(firebaseUid, email, phoneNumber, displayName) {
   }
 }
 
-// ポイントを消費
+// ポイントを消費（小数点対応）
 async function consumePoints(userId, apiType, amount, description) {
   if (!pool) return { success: true, remaining: 999999 }; // DB未設定時は無制限
   
@@ -186,13 +191,14 @@ async function consumePoints(userId, apiType, amount, description) {
       return { success: false, error: 'User not found' };
     }
     
-    const currentPoints = user.rows[0].points;
+    // PostgreSQLのDECIMALは文字列で返ってくるのでparseFloat
+    const currentPoints = parseFloat(user.rows[0].points);
     if (currentPoints < amount) {
       return { success: false, error: 'Insufficient points', remaining: currentPoints };
     }
     
-    // ポイントを減算
-    const newBalance = currentPoints - amount;
+    // ポイントを減算（小数点4桁で丸める）
+    const newBalance = Math.round((currentPoints - amount) * 10000) / 10000;
     await pool.query(
       'UPDATE stealth_users SET points = $1 WHERE id = $2',
       [newBalance, userId]

@@ -33,7 +33,8 @@ export function UserMenu() {
 
   // ログイン済み
   const displayName = userData?.displayName || user.email?.split('@')[0] || 'ユーザー';
-  const points = userData?.points ?? '---';
+  // ポイントは小数点で計算されるが、表示は整数に丸める
+  const points = userData?.points !== undefined ? Math.floor(userData.points) : '---';
 
   return (
     <div className="user-menu">
