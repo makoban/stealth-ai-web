@@ -31,6 +31,7 @@ interface AuthContextType {
   sendPasswordReset: (email: string) => Promise<void>;
   clearError: () => void;
   refreshUserData: () => Promise<void>;
+  updatePoints: (newPoints: number) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -162,6 +163,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchUserData();
   };
 
+  // ポイントを直接更新（リアルタイム更新用）
+  const updatePoints = (newPoints: number) => {
+    if (userData) {
+      setUserData({
+        ...userData,
+        points: newPoints,
+      });
+    }
+  };
+
   // エラーをクリア
   const clearError = () => setError(null);
 
@@ -179,6 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sendPasswordReset,
         clearError,
         refreshUserData,
+        updatePoints,
       }}
     >
       {children}

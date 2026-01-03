@@ -165,6 +165,20 @@ export interface RealtimeCorrectionResult {
   confidence: number;
 }
 
+// 最新のポイント残高を保持（リアルタイム更新用）
+let lastKnownPoints: number | null = null;
+let onPointsUpdateCallback: ((points: number) => void) | null = null;
+
+// ポイント更新コールバックを設定
+export function setOnPointsUpdate(callback: (points: number) => void): void {
+  onPointsUpdateCallback = callback;
+}
+
+// 最新のポイント残高を取得
+export function getLastKnownPoints(): number | null {
+  return lastKnownPoints;
+}
+
 // Gemini APIをサーバー経由で呼び出す共通関数
 async function callGemini(prompt: string): Promise<string> {
   console.log('[Gemini] callGemini called via server proxy');
@@ -207,6 +221,14 @@ async function callGemini(prompt: string): Promise<string> {
   
   const outputTokens = estimateTokens(text);
   apiUsageStats.outputTokens += outputTokens;
+
+  // ポイント残高を更新（リアルタイム）
+  if (data._points !== undefined) {
+    lastKnownPoints = data._points;
+    if (onPointsUpdateCallback) {
+      onPointsUpdateCallback(data._points);
+    }
+  }
 
   return text;
 }

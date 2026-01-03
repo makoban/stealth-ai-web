@@ -1,6 +1,19 @@
 // OpenAI Whisper API for speech recognition (サーバー経由)
-import { addWhisperUsage } from './gemini';
+import { addWhisperUsage, setOnPointsUpdate } from './gemini';
 import { getIdToken } from './firebase';
+
+// Whisper用のポイント更新コールバック
+let whisperPointsCallback: ((points: number) => void) | null = null;
+
+export function setWhisperPointsCallback(callback: (points: number) => void): void {
+  whisperPointsCallback = callback;
+}
+
+// ポイント更新コールバックを両方に設定
+export function setPointsUpdateCallback(callback: (points: number) => void): void {
+  whisperPointsCallback = callback;
+  setOnPointsUpdate(callback);
+}
 
 // PCMデータをWAVファイルに変換
 function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
@@ -106,6 +119,11 @@ export async function transcribeAudio(
   
   // 使用量を追跡
   addWhisperUsage(duration);
+
+  // ポイント残高を更新（リアルタイム）
+  if (data._points !== undefined && whisperPointsCallback) {
+    whisperPointsCallback(data._points);
+  }
 
   return {
     text: data.text || '',

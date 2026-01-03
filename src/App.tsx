@@ -23,11 +23,12 @@ import {
   ExtendedProperNounResult,
   ProperNoun,
 } from './lib/gemini';
+import { setPointsUpdateCallback } from './lib/whisper';
 
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v2.9';
+const APP_VERSION = 'v3.0';
 
 
 
@@ -87,7 +88,17 @@ type ExpandedSection = 'none' | 'conversation' | 'summary' | 'lookup';
 
 export default function App() {
   // 認証情報を取得
-  const { user, userData } = useAuth();
+  const { user, userData, updatePoints } = useAuth();
+
+  // ポイント更新コールバックを設定（リアルタイム更新用）
+  useEffect(() => {
+    if (user) {
+      setPointsUpdateCallback((newPoints: number) => {
+        console.log('[App] Points updated:', newPoints);
+        updatePoints(newPoints);
+      });
+    }
+  }, [user, updatePoints]);
   
   // 音声増幅倍率（自動調整、初期値は最大）
   const [gainValue, setGainValue] = useState<number>(50);
