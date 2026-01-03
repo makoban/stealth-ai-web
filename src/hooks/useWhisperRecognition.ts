@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { AudioRecorder, transcribeAudio, OPENAI_API_KEY } from '../lib/whisper';
+import { AudioRecorder, transcribeAudio } from '../lib/whisper';
 
 export type RecognitionState = 'idle' | 'starting' | 'listening' | 'processing' | 'stopping';
 
 export interface UseWhisperRecognitionOptions {
-  apiKey?: string;
   intervalMs?: number; // 音声を送信する間隔（ミリ秒）
   silenceThreshold?: number; // 無音と判定する閾値（0-1）
   whisperPrompt?: string; // Whisper APIに渡すプロンプト（固有名詞のヒント）
@@ -118,7 +117,6 @@ function isHallucination(text: string): boolean {
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
-    apiKey = OPENAI_API_KEY,
     intervalMs = 4000, // 4秒ごとに送信
     silenceThreshold = 0.05, // 5%以下は無音と判定
     whisperPrompt = '', // Whisperに渡すプロンプト
@@ -140,7 +138,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
-  const apiKeyRef = useRef<string>(apiKey);
+  
   const whisperPromptRef = useRef<string>(whisperPrompt);
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
   const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
@@ -154,11 +152,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const VAD_MAX_SPEECH_DURATION = 10000; // 最大発話時間（ミリ秒）- これを超えたら強制送信
   const VAD_SPEECH_THRESHOLD = 0.03; // 発話と判定する閾値
 
-  // APIキーとプロンプトをrefで保持（再レンダリングを防ぐ）
-  useEffect(() => {
-    apiKeyRef.current = apiKey;
-  }, [apiKey]);
-
+  // プロンプトをrefで保持（再レンダリングを防ぐ）
   useEffect(() => {
     whisperPromptRef.current = whisperPrompt;
     console.log('[Whisper] Prompt updated:', whisperPrompt?.slice(0, 50) + '...');
@@ -233,7 +227,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
     try {
       console.log('[Whisper] Sending to API with prompt...');
-      const result = await transcribeAudio(blob, apiKeyRef.current, whisperPromptRef.current);
+      const result = await transcribeAudio(blob, whisperPromptRef.current);
       console.log('[Whisper] Result:', result);
       
       if (result.text && result.text.trim()) {
@@ -289,13 +283,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const startListening = useCallback(async () => {
     if (!isSupported) {
       setError('音声録音はサポートされていません');
-      return;
-    }
-
-    // APIキーチェック
-    const key = apiKeyRef.current;
-    if (!key || key.includes('XXXX') || key.length < 10) {
-      setError('OpenAI APIキーを設定してください');
       return;
     }
 
@@ -436,7 +423,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         setProcessingStatus('最終処理中...');
         
         try {
-          const result = await transcribeAudio(finalBlob, apiKeyRef.current, whisperPromptRef.current);
+          const result = await transcribeAudio(finalBlob, whisperPromptRef.current);
           if (result.text && result.text.trim() && !isHallucination(result.text.trim())) {
             pendingTextRef.current = pendingTextRef.current 
               ? pendingTextRef.current + ' ' + result.text.trim() 

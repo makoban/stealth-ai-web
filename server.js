@@ -1,21 +1,165 @@
-// AssemblyAI トークン取得プロキシサーバー
+// ステルスAI APIプロキシサーバー
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// multer設定（音声ファイルアップロード用）
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB制限
+});
+
 // CORS設定
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // 静的ファイルの配信
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// AssemblyAI トークン取得エンドポイント（v3 API使用）
+// ヘルスチェック
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ===========================================
+// Whisper API プロキシ（音声→テキスト変換）
+// ===========================================
+app.post('/api/whisper', upload.single('file'), async (req, res) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  
+  if (!apiKey) {
+    console.error('[Proxy] OpenAI API key not configured');
+    return res.status(500).json({ error: 'OpenAI API key not configured' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No audio file provided' });
+  }
+
+  console.log('[Proxy] Whisper request:', {
+    fileSize: req.file.size,
+    mimeType: req.file.mimetype,
+    hasPrompt: !!req.body.prompt,
+  });
+
+  try {
+    // FormDataを構築
+    const FormData = (await import('form-data')).default;
+    const formData = new FormData();
+    
+    formData.append('file', req.file.buffer, {
+      filename: 'audio.wav',
+      contentType: req.file.mimetype || 'audio/wav',
+    });
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'ja'); // 日本語固定
+    formData.append('response_format', 'verbose_json');
+    
+    // プロンプトがあれば追加
+    if (req.body.prompt) {
+      formData.append('prompt', req.body.prompt.slice(0, 400));
+    }
+
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        ...formData.getHeaders(),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Proxy] Whisper API error:', response.status, errorText);
+      return res.status(response.status).json({ 
+        error: `Whisper API error: ${response.status}`,
+        details: errorText 
+      });
+    }
+
+    const data = await response.json();
+    console.log('[Proxy] Whisper success:', { 
+      textLength: data.text?.length || 0,
+      duration: data.duration 
+    });
+    
+    res.json(data);
+  } catch (error) {
+    console.error('[Proxy] Whisper error:', error);
+    res.status(500).json({ error: 'Whisper API request failed', details: String(error) });
+  }
+});
+
+// ===========================================
+// Gemini API プロキシ（テキスト生成）
+// ===========================================
+app.post('/api/gemini', async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  
+  if (!apiKey) {
+    console.error('[Proxy] Gemini API key not configured');
+    return res.status(500).json({ error: 'Gemini API key not configured' });
+  }
+
+  const { prompt, temperature = 0.3, maxOutputTokens = 2048 } = req.body;
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'No prompt provided' });
+  }
+
+  console.log('[Proxy] Gemini request:', {
+    promptLength: prompt.length,
+    temperature,
+    maxOutputTokens,
+  });
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Proxy] Gemini API error:', response.status, errorText);
+      return res.status(response.status).json({ 
+        error: `Gemini API error: ${response.status}`,
+        details: errorText 
+      });
+    }
+
+    const data = await response.json();
+    console.log('[Proxy] Gemini success:', {
+      hasContent: !!data.candidates?.[0]?.content,
+    });
+    
+    res.json(data);
+  } catch (error) {
+    console.error('[Proxy] Gemini error:', error);
+    res.status(500).json({ error: 'Gemini API request failed', details: String(error) });
+  }
+});
+
+// ===========================================
+// AssemblyAI トークン取得（既存）
+// ===========================================
 app.get('/api/assemblyai/token', async (req, res) => {
-  const apiKey = process.env.VITE_ASSEMBLYAI_API_KEY;
+  const apiKey = process.env.ASSEMBLYAI_API_KEY;
   
   if (!apiKey) {
     console.error('[Proxy] AssemblyAI API key not configured');
@@ -25,9 +169,8 @@ app.get('/api/assemblyai/token', async (req, res) => {
   console.log('[Proxy] Requesting token from AssemblyAI v3 API...');
 
   try {
-    // v3 APIはGETメソッドでクエリパラメータを使用
     const url = new URL('https://streaming.assemblyai.com/v3/token');
-    url.searchParams.append('expires_in_seconds', '600'); // 10分有効
+    url.searchParams.append('expires_in_seconds', '600');
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -58,4 +201,9 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  console.log('API Keys configured:', {
+    openai: !!process.env.OPENAI_API_KEY,
+    gemini: !!process.env.GEMINI_API_KEY,
+    assemblyai: !!process.env.ASSEMBLYAI_API_KEY,
+  });
 });

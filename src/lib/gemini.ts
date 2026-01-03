@@ -1,5 +1,5 @@
 // Gemini APIキー（環境変数またはデフォルト値）
-export const HARDCODED_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+// APIキーはサーバー側で管理（フロントには露出しない）
 
 // 知識レベルの型
 export type KnowledgeLevel = 'elementary' | 'middle' | 'high' | 'university' | 'expert';
@@ -151,27 +151,23 @@ export interface RealtimeCorrectionResult {
   confidence: number;
 }
 
-// Gemini APIを呼び出す共通関数
-async function callGemini(prompt: string, apiKey: string): Promise<string> {
-  console.log('[Gemini] callGemini called, apiKey:', apiKey ? apiKey.substring(0, 10) + '...' : 'MISSING');
+// Gemini APIをサーバー経由で呼び出す共通関数
+async function callGemini(prompt: string): Promise<string> {
+  console.log('[Gemini] callGemini called via server proxy');
   const inputTokens = estimateTokens(prompt);
   apiUsageStats.inputTokens += inputTokens;
   apiUsageStats.callCount++;
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 2048,
-        },
-      }),
-    }
-  );
+  // サーバー経由でAPIを呼び出し（APIキーはサーバー側で管理）
+  const response = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      temperature: 0.3,
+      maxOutputTokens: 2048,
+    }),
+  });
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -193,7 +189,6 @@ export async function correctRealtimeText(
   rawText: string,
   conversationContext: string,
   genre: ConversationGenre | null,
-  apiKey: string
 ): Promise<RealtimeCorrectionResult> {
   console.log('[Gemini] correctRealtimeText called:', rawText);
   
@@ -256,7 +251,7 @@ JSON形式で回答してください:
 }`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const result = JSON.parse(jsonMatch[0]);
@@ -291,7 +286,6 @@ JSON形式で回答してください:
 export async function detectProperNouns(
   text: string,
   knowledgeLevel: KnowledgeLevel,
-  apiKey: string
 ): Promise<ProperNoun[]> {
   // 知識レベルに応じた検出基準
   // 注意: これは「柔軟度」ではなく「知識として知らないレベル」を設定するもの
@@ -317,7 +311,7 @@ JSON形式で回答してください:
 該当する単語がない場合は空の配列[]を返してください。`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -334,7 +328,6 @@ export async function explainProperNoun(
   category: string,
   context: string,
   knowledgeLevel: KnowledgeLevel,
-  apiKey: string
 ): Promise<Candidate[]> {
   const levelPrompt = {
     elementary: '小学生でもわかるように、簡単な言葉で',
@@ -353,7 +346,7 @@ export async function explainProperNoun(
 [{"name": "正式名称", "description": "説明（100文字以内）", "confidence": 0.9, "url": "参考URL"}]`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -368,7 +361,6 @@ export async function explainProperNoun(
 export async function summarizeConversation(
   conversation: string,
   previousSummary: string | null,
-  apiKey: string
 ): Promise<ConversationSummary> {
   console.log('[Gemini] summarizeConversation called, conversation length:', conversation.length);
   const prompt = previousSummary
@@ -392,7 +384,7 @@ JSON形式で回答してください:
 {"summary": "要約（50文字以内）", "topics": ["トピック1", "トピック2"], "keyPoints": ["ポイント1", "ポイント2"], "context": "会話の場面", "participants": "参加者の予想", "purpose": "会話の目的"}`;
 
   try {
-    const response = await callGemini(fullPrompt, apiKey);
+    const response = await callGemini(fullPrompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -407,7 +399,6 @@ JSON形式で回答してください:
 export async function correctConversation(
   text: string,
   context: string,
-  apiKey: string
 ): Promise<CorrectedConversation> {
   const prompt = `音声認識で取得した以下のテキストを、前後の文脈から誤認識を修正してください。
 
@@ -423,7 +414,7 @@ JSON形式で回答してください:
 {"correctedText": "${text}", "uncertainWords": [], "wasModified": false}`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -469,7 +460,6 @@ export type GenreType = typeof GENRE_LIST[number];
 export async function detectConversationGenre(
   conversation: string,
   previousGenres: string[] | null,
-  apiKey: string
 ): Promise<ConversationGenre> {
   const genreListStr = GENRE_LIST.join('、');
   
@@ -504,7 +494,7 @@ JSON形式で回答してください:
 }`;
 
   try {
-    const response = await callGemini(fullPrompt, apiKey);
+    const response = await callGemini(fullPrompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const result = JSON.parse(jsonMatch[0]);
@@ -526,7 +516,6 @@ export async function detectProperNounsWithGenre(
   text: string,
   knowledgeLevel: KnowledgeLevel,
   genre: ConversationGenre | null,
-  apiKey: string
 ): Promise<ProperNoun[]> {
   // 知識レベルに応じた検出基準（「知識として知らないレベル」を設定）
   const levelCriteria = {
@@ -561,7 +550,7 @@ JSON形式で回答してください:
 該当する単語がない場合は空の配列[]を返してください。`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -577,7 +566,7 @@ export async function correctConversationWithGenre(
   text: string,
   context: string,
   genre: ConversationGenre | null,
-  apiKey: string,
+  
   userHint?: string
 ): Promise<CorrectedConversation> {
   const genreContext = genre && genre.confidence > 0.5
@@ -610,7 +599,7 @@ JSON形式で回答してください:
 {"correctedText": "${text}", "uncertainWords": [], "wasModified": false}`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -628,7 +617,6 @@ export async function detectProperNounsExtended(
   knowledgeLevel: KnowledgeLevel,
   genre: ConversationGenre | null,
   conversationContext: string,
-  apiKey: string
 ): Promise<ExtendedProperNounResult> {
   // 知識レベルに応じた検出基準（「知識として知らないレベル」を設定）
   const levelCriteria = {
@@ -692,7 +680,7 @@ JSON形式で回答してください:
 該当がない場合は空の配列を使用してください。`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const result = JSON.parse(jsonMatch[0]);
@@ -717,7 +705,6 @@ export async function investigateProperNoun(
   context: string,
   genre: ConversationGenre | null,
   knowledgeLevel: KnowledgeLevel,
-  apiKey: string
 ): Promise<Candidate[]> {
   const levelPrompt = {
     elementary: '小学生でもわかるように、簡単な言葉で',
@@ -757,7 +744,7 @@ JSON形式で回答してください（最大5候補）:
 該当がない場合は空の配列[]を返してください。`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -773,7 +760,6 @@ export async function redetectMissedProperNouns(
   fullConversation: string,
   alreadyDetected: string[],
   genre: ConversationGenre | null,
-  apiKey: string
 ): Promise<ProperNoun[]> {
   const alreadyDetectedStr = alreadyDetected.length > 0
     ? `既に検出済み: ${alreadyDetected.join('、')}`
@@ -805,7 +791,7 @@ JSON形式で回答してください:
 見逃しがない場合は空の配列[]を返してください。`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
@@ -822,7 +808,6 @@ export async function generateGenreKeywords(
   genre: ConversationGenre,
   teachContent: string,
   detectedNouns: string[],
-  apiKey: string
 ): Promise<string> {
   // 教えるファイルの内容から固有名詞を抽出
   const teachHint = teachContent && teachContent.trim()
@@ -862,7 +847,7 @@ ${detectedHint}
 ジャンル「${genre.primary}」の固有名詞リスト:`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     // 改行やスペースを整理してカンマ区切りのリストにする
     const cleanedResponse = response
       .replace(/\n/g, '、')
@@ -918,7 +903,6 @@ export function buildWhisperPrompt(
 // TXT読み込み時に1回だけ呼び出され、TXT変更まで維持される
 export async function generateKeywordsFromTeachFile(
   teachContent: string,
-  apiKey: string
 ): Promise<string> {
   if (!teachContent || !teachContent.trim()) {
     return '';
@@ -943,7 +927,7 @@ ${teachContent.slice(0, 500)}
 固有名詞リスト:`;
 
   try {
-    const response = await callGemini(prompt, apiKey);
+    const response = await callGemini(prompt);
     // 改行やスペースを整理してカンマ区切りのリストにする
     const cleanedResponse = response
       .replace(/\n/g, '、')

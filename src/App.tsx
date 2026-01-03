@@ -12,7 +12,6 @@ import {
   buildWhisperPrompt,
   getTotalApiUsageStats,
   resetAllUsageStats,
-  HARDCODED_API_KEY,
   KnowledgeLevel,
   KNOWLEDGE_LEVEL_LABELS,
   ConversationSummary,
@@ -21,11 +20,11 @@ import {
   ExtendedProperNounResult,
   ProperNoun,
 } from './lib/gemini';
-import { OPENAI_API_KEY } from './lib/whisper';
+
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v1.56';
+const APP_VERSION = 'v1.57';
 
 // 音声認識エンジンの種類
 type SpeechEngine = 'whisper';
@@ -91,9 +90,6 @@ export default function App() {
   // 音声認識エンジン選択（現在はWhisperのみ）
   const [speechEngine] = useState<SpeechEngine>('whisper');
 
-  // OpenAI APIキー（環境変数から取得）
-  const openaiApiKey = OPENAI_API_KEY;
-  
   // 音声増幅倍率（自動調整、初期値は最大）
   const [gainValue, setGainValue] = useState<number>(50);
 
@@ -113,7 +109,6 @@ export default function App() {
 
   // Whisper API
   const whisper = useWhisperRecognition({
-    apiKey: openaiApiKey,
     intervalMs: 4000,
     whisperPrompt: whisperPrompt, // ジャンル・教えるファイル・検出済み固有名詞から構築
   });
@@ -215,7 +210,7 @@ export default function App() {
       const result = await summarizeConversation(
         conversation,
         conversationSummaryRef.current?.summary || null,
-        HARDCODED_API_KEY
+        
       );
 
       if (result.summary) {
@@ -256,7 +251,7 @@ export default function App() {
       const genre = await detectConversationGenre(
         conversation,
         previousGenres,
-        HARDCODED_API_KEY
+        
       );
       
       console.log('[App] Genre detected:', genre);
@@ -269,7 +264,7 @@ export default function App() {
             genre,
             teachContent,
             detectedNounsRef.current,
-            HARDCODED_API_KEY
+            
           );
           setGenreKeywords(keywords);
           console.log('[App] Genre keywords generated:', keywords.slice(0, 100) + '...');
@@ -294,7 +289,7 @@ export default function App() {
 
     try {
       // 会話をGeminiで整形（文脈・ジャンル・教えるファイルを考慮して正確な日本語に）
-      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, HARDCODED_API_KEY, teachContent);
+      const corrected = await correctConversationWithGenre(text, fullConversation, currentGenre, teachContent);
 
       const entry: ConversationEntry = {
         id: Date.now().toString(),
@@ -312,7 +307,7 @@ export default function App() {
         knowledgeLevel,
         currentGenre,
         fullConversation,
-        HARDCODED_API_KEY
+        
       );
 
       // 知識レベルに応じた閾値設定
@@ -359,7 +354,7 @@ export default function App() {
           fullConversation,
           currentGenre,
           knowledgeLevel,
-          HARDCODED_API_KEY
+          
         );
 
         if (candidates.length > 0) {
@@ -543,7 +538,7 @@ export default function App() {
                   // TXT読み込み時にGeminiで関連キーワードを生成
                   setIsGeneratingKeywords(true);
                   try {
-                    const keywords = await generateKeywordsFromTeachFile(content, HARDCODED_API_KEY);
+                    const keywords = await generateKeywordsFromTeachFile(content);
                     setTeachFileKeywords(keywords);
                     console.log('[App] Generated keywords from teach file:', keywords.slice(0, 100) + '...');
                   } catch (err) {
