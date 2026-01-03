@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.0';
+const APP_VERSION = 'v3.1';
 
 
 
@@ -91,14 +91,9 @@ export default function App() {
   const { user, userData, updatePoints } = useAuth();
 
   // ポイント更新コールバックを設定（リアルタイム更新用）
-  useEffect(() => {
-    if (user) {
-      setPointsUpdateCallback((newPoints: number) => {
-        console.log('[App] Points updated:', newPoints);
-        updatePoints(newPoints);
-      });
-    }
-  }, [user, updatePoints]);
+  // ポイント0で自動停止用のフラグと関数参照
+  const pointsZeroStopRef = useRef<boolean>(false);
+  const stopListeningRef = useRef<(() => void) | null>(null);
   
   // 音声増幅倍率（自動調整、初期値は最大）
   const [gainValue, setGainValue] = useState<number>(50);
@@ -135,6 +130,35 @@ export default function App() {
   const stopListening = useCallback(() => {
     whisper.stopListening();
   }, [whisper]);
+
+  // stopListeningをrefに保存（ポイント0で自動停止用）
+  useEffect(() => {
+    stopListeningRef.current = stopListening;
+  }, [stopListening]);
+
+  // ポイント更新コールバックを設定（リアルタイム更新用）
+  useEffect(() => {
+    if (user) {
+      setPointsUpdateCallback((newPoints: number) => {
+        console.log('[App] Points updated:', newPoints);
+        updatePoints(newPoints);
+        
+        // ポイント0以下になったら自動停止
+        if (newPoints <= 0 && !pointsZeroStopRef.current) {
+          pointsZeroStopRef.current = true;
+          console.log('[App] Points exhausted, stopping recording');
+          // 少し遅延させて停止（現在の処理が完了してから）
+          setTimeout(() => {
+            if (stopListeningRef.current) {
+              stopListeningRef.current();
+            }
+            alert('ポイントがなくなりました。録音を停止しました。');
+            pointsZeroStopRef.current = false;
+          }, 500);
+        }
+      });
+    }
+  }, [user, updatePoints]);
 
   const clearTranscript = useCallback(() => {
     whisper.clearTranscript();
