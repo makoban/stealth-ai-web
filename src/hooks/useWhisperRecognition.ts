@@ -117,7 +117,6 @@ function isHallucination(text: string): boolean {
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
-    intervalMs = 4000, // 4秒ごとに送信
     silenceThreshold = 0.05, // 5%以下は無音と判定
     whisperPrompt = '', // Whisperに渡すプロンプト
   } = options;
@@ -134,7 +133,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [processingStatus, setProcessingStatus] = useState<string>('');
 
   const recorderRef = useRef<AudioRecorder | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
@@ -143,14 +141,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
   const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
   
-  // VAD（無音検出）用
+  // VAD（無音検出）用 - 無音0.5秒で送信
   const speechStartTimeRef = useRef<number | null>(null); // 発話開始時刻
   const silenceStartTimeRef = useRef<number | null>(null); // 無音開始時刻
   const vadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // VADタイムアウト
-  const VAD_SILENCE_DURATION = 800; // 無音と判定する時間（ミリ秒）
-  const VAD_MIN_SPEECH_DURATION = 500; // 最低発話時間（ミリ秒）
-  const VAD_MAX_SPEECH_DURATION = 10000; // 最大発話時間（ミリ秒）- これを超えたら強制送信
-  const VAD_SPEECH_THRESHOLD = 0.03; // 発話と判定する閾値
+  const VAD_SILENCE_DURATION = 500; // 無音と判定する時間（0.5秒）
+  const VAD_MIN_SPEECH_DURATION = 300; // 最低発話時間（0.3秒）
+  const VAD_MAX_SPEECH_DURATION = 30000; // 最大発話時間（30秒）- これを超えたら強制送信
+  const VAD_SPEECH_THRESHOLD = 0.02; // 発話と判定する閾値（より敏感に）
 
   // プロンプトをrefで保持（再レンダリングを防ぐ）
   useEffect(() => {
@@ -367,16 +365,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('listening');
       setProcessingStatus('解析中');
 
-      // バックアップ用の定期処理（VADが動作しない場合のフォールバック）
-      intervalRef.current = setInterval(() => {
-        // VADが動作していない場合のみ定期送信
-        const now = Date.now();
-        if (speechStartTimeRef.current && (now - speechStartTimeRef.current) > intervalMs) {
-          console.log('[VAD] Backup interval triggered');
-          processAudio();
-          speechStartTimeRef.current = now;
-        }
-      }, intervalMs);
+      // VADのみで動作（固定間隔なし）
+      // バックアップ用の定期処理は削除
 
       // 6秒ごとにリアルタイム欄から会話欄に移動
       flushIntervalRef.current = setInterval(() => {
@@ -389,17 +379,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('idle');
       setProcessingStatus('');
     }
-  }, [isSupported, currentGain, intervalMs, processAudio, flushToTranscript]);
+  }, [isSupported, currentGain, processAudio, flushToTranscript]);
 
   const stopListening = useCallback(async () => {
     setState('stopping');
     setProcessingStatus('停止中...');
 
     // インターバルを停止
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
     if (flushIntervalRef.current) {
       clearInterval(flushIntervalRef.current);
       flushIntervalRef.current = null;
@@ -458,9 +444,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   // クリーンアップ
   useEffect(() => {
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
       if (flushIntervalRef.current) {
         clearInterval(flushIntervalRef.current);
       }
