@@ -124,7 +124,7 @@
 }
 
 .section h2 {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--primary);
   margin: 0 0 8px 0;
@@ -139,7 +139,7 @@
 
 .placeholder {
   color: var(--text-disabled);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   text-align: center;
   padding: 12px;
 }
@@ -806,13 +806,13 @@
 }
 
 .word-name {
-  font-size: 15px;
+  font-size: var(--font-size-large);
   font-weight: 600;
   color: var(--primary);
 }
 
 .word-category {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   background: var(--surface);
   padding: 2px 8px;
   border-radius: 8px;
@@ -820,7 +820,7 @@
 }
 
 .word-explanation {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   line-height: 1.5;
   margin: 0;
@@ -848,7 +848,7 @@
 .word-url {
   display: inline-block;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-small);
   color: var(--primary);
   text-decoration: none;
   padding: 4px 8px;
@@ -864,7 +864,7 @@
 
 /* 候補・要確認バッジ */
 .candidate-badge {
-  font-size: 10px;
+  font-size: var(--font-size-small);
   background: #FFA500;
   color: white;
   padding: 2px 6px;
@@ -872,7 +872,7 @@
 }
 
 .verification-badge {
-  font-size: 10px;
+  font-size: var(--font-size-small);
   background: #FF6B6B;
   color: white;
   padding: 2px 6px;
@@ -880,7 +880,7 @@
 }
 
 .confidence-badge {
-  font-size: 10px;
+  font-size: var(--font-size-small);
   background: var(--surface);
   color: var(--text-secondary);
   padding: 2px 6px;
@@ -906,7 +906,7 @@
 }
 
 .alternatives-header {
-  font-size: 12px;
+  font-size: var(--font-size-small);
   color: var(--text-secondary);
   margin-bottom: 8px;
   font-weight: 600;
@@ -924,26 +924,26 @@
 }
 
 .alt-name {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--primary);
 }
 
 .alt-confidence {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   color: var(--text-secondary);
   margin-left: 4px;
 }
 
 .alt-description {
-  font-size: 12px;
+  font-size: var(--font-size-small);
   color: var(--text-primary);
   margin: 4px 0 0 0;
   line-height: 1.4;
 }
 
 .alt-url {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   color: var(--primary);
   text-decoration: none;
   margin-left: 8px;
@@ -980,7 +980,7 @@
 }
 
 .prediction-item {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   color: var(--text-secondary);
   background: rgba(255, 20, 147, 0.08);
   padding: 4px 10px;
@@ -997,7 +997,7 @@
   color: white;
   padding: 3px 8px;
   border-radius: 10px;
-  font-size: 10px;
+  font-size: var(--font-size-small);
   font-weight: 600;
   cursor: help;
   transition: transform 0.2s;
@@ -1380,7 +1380,7 @@
 }
 
 .clarity-label {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -1400,7 +1400,7 @@
 }
 
 .clarity-value {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   font-weight: 600;
   color: var(--text-primary);
   min-width: 35px;
@@ -1420,11 +1420,11 @@
 }
 
 .detailed-topic-icon {
-  font-size: 14px;
+  font-size: var(--font-size-base);
 }
 
 .detailed-topic-text {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
 }
 
@@ -1436,7 +1436,7 @@
 }
 
 .predicted-words-label {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   color: var(--text-secondary);
   display: block;
   margin-bottom: 6px;
@@ -1453,7 +1453,7 @@
   color: var(--text-primary);
   padding: 2px 8px;
   border-radius: 10px;
-  font-size: 10px;
+  font-size: var(--font-size-small);
   border: 1px solid var(--border);
 }
 
@@ -1466,7 +1466,7 @@
 }
 
 .prediction-item {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   color: var(--text-secondary);
   background: var(--surface);
   padding: 2px 8px;
