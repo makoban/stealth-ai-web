@@ -1,5 +1,10 @@
 /* デフォルトテーマ: ビジネス（白と黒） */
 :root {
+  /* 文字サイズ（デフォルト: 小） */
+  --font-size-base: 14px;
+  --font-size-small: 12px;
+  --font-size-large: 16px;
+  --font-size-xlarge: 18px;
   --primary: #1a1a1a;
   --primary-light: #4a4a4a;
   --background: #f5f5f5;
@@ -44,6 +49,38 @@
   --warning: #FFD700;
   --error: #FF6B6B;
   --border: #FFB6C1;
+}
+
+/* 文字サイズ: 極小 */
+:root[data-fontsize="xs"] {
+  --font-size-base: 11px;
+  --font-size-small: 9px;
+  --font-size-large: 13px;
+  --font-size-xlarge: 15px;
+}
+
+/* 文字サイズ: 小（デフォルト） */
+:root[data-fontsize="sm"] {
+  --font-size-base: 14px;
+  --font-size-small: 12px;
+  --font-size-large: 16px;
+  --font-size-xlarge: 18px;
+}
+
+/* 文字サイズ: 中 */
+:root[data-fontsize="md"] {
+  --font-size-base: 16px;
+  --font-size-small: 14px;
+  --font-size-large: 18px;
+  --font-size-xlarge: 20px;
+}
+
+/* 文字サイズ: 大 */
+:root[data-fontsize="lg"] {
+  --font-size-base: 18px;
+  --font-size-small: 16px;
+  --font-size-large: 20px;
+  --font-size-xlarge: 22px;
 }
 
 * {

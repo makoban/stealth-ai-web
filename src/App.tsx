@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.12';
+const APP_VERSION = 'v3.13';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -39,6 +39,9 @@ const THEME_LABELS: Record<ColorTheme, string> = {
   natural: 'ナチュラル',
   pop: 'ポップ',
 };
+
+// 文字サイズの型定義
+type FontSize = 'xs' | 'sm' | 'md' | 'lg';
 
 
 
@@ -219,6 +222,17 @@ export default function App() {
     localStorage.setItem('stealth_color_theme', colorTheme);
   }, [colorTheme]);
   
+  // 文字サイズ管理（デフォルト: 小）
+  const [fontSize, setFontSize] = useState<FontSize>(() => {
+    const saved = localStorage.getItem('stealth_font_size');
+    return (saved as FontSize) || 'sm';
+  });
+  
+  // 文字サイズ変更時にDOMとlocalStorageを更新
+  useEffect(() => {
+    document.documentElement.setAttribute('data-fontsize', fontSize);
+    localStorage.setItem('stealth_font_size', fontSize);
+  }, [fontSize]);
 
   // プチ記憶・完全記憶の内容
   const [petitMemoryContent, setPetitMemoryContent] = useState<string>('');
@@ -686,6 +700,37 @@ export default function App() {
               title="ポップ（ピンク系）"
             />
             <span className="theme-label">{THEME_LABELS[colorTheme]}</span>
+          </div>
+          {/* 文字サイズ切り替えボタン */}
+          <div className="fontsize-switcher">
+            <button
+              className={`fontsize-btn xs ${fontSize === 'xs' ? 'active' : ''}`}
+              onClick={() => setFontSize('xs')}
+              title="極小"
+            >
+              A
+            </button>
+            <button
+              className={`fontsize-btn sm ${fontSize === 'sm' ? 'active' : ''}`}
+              onClick={() => setFontSize('sm')}
+              title="小"
+            >
+              A
+            </button>
+            <button
+              className={`fontsize-btn md ${fontSize === 'md' ? 'active' : ''}`}
+              onClick={() => setFontSize('md')}
+              title="中"
+            >
+              A
+            </button>
+            <button
+              className={`fontsize-btn lg ${fontSize === 'lg' ? 'active' : ''}`}
+              onClick={() => setFontSize('lg')}
+              title="大"
+            >
+              A
+            </button>
           </div>
         </div>
         <div className="header-right">

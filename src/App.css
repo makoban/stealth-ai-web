@@ -152,7 +152,7 @@
 }
 
 .realtime-text {
-  font-size: 16px;
+  font-size: var(--font-size-large);
   color: var(--text-secondary);
   padding: 8px;
   background: white;
@@ -182,19 +182,19 @@
 }
 
 .entry-text {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   line-height: 1.4;
 }
 
 .uncertain {
   color: var(--warning);
-  font-size: 12px;
+  font-size: var(--font-size-small);
 }
 
 .original-text {
   display: block;
-  font-size: 11px;
+  font-size: var(--font-size-small);
   color: var(--text-disabled);
   margin-top: 4px;
 }
@@ -213,7 +213,7 @@
 }
 
 .summary-text {
-  font-size: 14px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   margin: 0 0 6px 0;
   line-height: 1.4;
@@ -230,7 +230,7 @@
   color: white;
   padding: 2px 8px;
   border-radius: 12px;
-  font-size: 11px;
+  font-size: var(--font-size-small);
 }
 
 /* 調べた単語欄 - 比率4 */
@@ -255,13 +255,13 @@
 }
 
 .lookup-word {
-  font-size: 15px;
+  font-size: var(--font-size-large);
   font-weight: 600;
   color: var(--primary);
 }
 
 .lookup-category {
-  font-size: 11px;
+  font-size: var(--font-size-small);
   background: var(--surface);
   padding: 2px 8px;
   border-radius: 8px;
@@ -269,7 +269,7 @@
 }
 
 .lookup-explanation {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   line-height: 1.5;
   margin: 0;
@@ -1546,5 +1546,89 @@
   
   .theme-label {
     display: none;
+  }
+}
+
+
+/* 文字サイズ切り替えボタン */
+.fontsize-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 4px 6px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.fontsize-btn {
+  min-width: 24px;
+  height: 22px;
+  border-radius: 11px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  padding: 0 4px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.fontsize-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.fontsize-btn.active {
+  background: white;
+  color: var(--primary);
+  border-color: white;
+}
+
+.fontsize-btn.xs {
+  font-size: 9px;
+}
+
+.fontsize-btn.sm {
+  font-size: 11px;
+}
+
+.fontsize-btn.md {
+  font-size: 13px;
+}
+
+.fontsize-btn.lg {
+  font-size: 15px;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 480px) {
+  .fontsize-switcher {
+    padding: 3px 4px;
+    gap: 1px;
+  }
+  
+  .fontsize-btn {
+    min-width: 20px;
+    height: 18px;
+    padding: 0 3px;
+  }
+  
+  .fontsize-btn.xs {
+    font-size: 8px;
+  }
+  
+  .fontsize-btn.sm {
+    font-size: 9px;
+  }
+  
+  .fontsize-btn.md {
+    font-size: 10px;
+  }
+  
+  .fontsize-btn.lg {
+    font-size: 11px;
   }
 }
