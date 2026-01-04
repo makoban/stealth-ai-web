@@ -28,8 +28,17 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.11';
+const APP_VERSION = 'v3.12';
 const APP_NAME = 'KUROKO +';
+
+// カラーテーマの型と定義
+type ColorTheme = 'business' | 'natural' | 'pop';
+
+const THEME_LABELS: Record<ColorTheme, string> = {
+  business: 'ビジネス',
+  natural: 'ナチュラル',
+  pop: 'ポップ',
+};
 
 
 
@@ -193,6 +202,24 @@ export default function App() {
   const setGain = whisper.setGain;
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
+  
+  // カラーテーマ管理（デフォルト: ビジネス）
+  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => {
+    const saved = localStorage.getItem('stealth_color_theme');
+    return (saved as ColorTheme) || 'business';
+  });
+  
+  // テーマ変更時にDOMとlocalStorageを更新
+  useEffect(() => {
+    if (colorTheme === 'business') {
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', colorTheme);
+    }
+    localStorage.setItem('stealth_color_theme', colorTheme);
+  }, [colorTheme]);
+  
+
   // プチ記憶・完全記憶の内容
   const [petitMemoryContent, setPetitMemoryContent] = useState<string>('');
   const [fullMemoryContent, setFullMemoryContent] = useState<string>('');
@@ -641,6 +668,25 @@ export default function App() {
             className="connection-indicator"
             style={{ backgroundColor: getConnectionColor() }}
           />
+          {/* テーマ切り替えボタン */}
+          <div className="theme-switcher">
+            <button
+              className={`theme-btn business ${colorTheme === 'business' ? 'active' : ''}`}
+              onClick={() => setColorTheme('business')}
+              title="ビジネス（白と黒）"
+            />
+            <button
+              className={`theme-btn natural ${colorTheme === 'natural' ? 'active' : ''}`}
+              onClick={() => setColorTheme('natural')}
+              title="ナチュラル（薄い青と白）"
+            />
+            <button
+              className={`theme-btn pop ${colorTheme === 'pop' ? 'active' : ''}`}
+              onClick={() => setColorTheme('pop')}
+              title="ポップ（ピンク系）"
+            />
+            <span className="theme-label">{THEME_LABELS[colorTheme]}</span>
+          </div>
         </div>
         <div className="header-right">
           <UserMenu />

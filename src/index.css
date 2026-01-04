@@ -1,4 +1,37 @@
+/* デフォルトテーマ: ビジネス（白と黒） */
 :root {
+  --primary: #1a1a1a;
+  --primary-light: #4a4a4a;
+  --background: #f5f5f5;
+  --surface: #ffffff;
+  --surface-elevated: #fafafa;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --text-disabled: #999999;
+  --success: #32CD32;
+  --warning: #FFD700;
+  --error: #FF6B6B;
+  --border: #e0e0e0;
+}
+
+/* ナチュラルテーマ（薄い青と白） */
+:root[data-theme="natural"] {
+  --primary: #4A90A4;
+  --primary-light: #7AB8C9;
+  --background: #F0F7FA;
+  --surface: #FFFFFF;
+  --surface-elevated: #E8F4F8;
+  --text-primary: #2C3E50;
+  --text-secondary: #5D6D7E;
+  --text-disabled: #95A5A6;
+  --success: #27AE60;
+  --warning: #F39C12;
+  --error: #E74C3C;
+  --border: #BDC3C7;
+}
+
+/* ポップテーマ（現状のピンク系） */
+:root[data-theme="pop"] {
   --primary: #FF1493;
   --primary-light: #FF69B4;
   --background: #FFF8DC;

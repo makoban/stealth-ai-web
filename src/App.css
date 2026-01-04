@@ -1472,3 +1472,79 @@
   padding: 2px 8px;
   border-radius: 8px;
 }
+
+
+/* テーマ切り替えボタン */
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 4px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.theme-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  padding: 0;
+}
+
+.theme-btn:hover {
+  transform: scale(1.1);
+}
+
+.theme-btn.active {
+  border-color: white;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+/* ビジネステーマボタン */
+.theme-btn.business {
+  background: linear-gradient(135deg, #1a1a1a 50%, #ffffff 50%);
+}
+
+/* ナチュラルテーマボタン */
+.theme-btn.natural {
+  background: linear-gradient(135deg, #4A90A4 50%, #F0F7FA 50%);
+}
+
+/* ポップテーマボタン */
+.theme-btn.pop {
+  background: linear-gradient(135deg, #FF1493 50%, #FFF8DC 50%);
+}
+
+/* テーマ名ラベル */
+.theme-label {
+  font-size: 10px;
+  color: white;
+  font-weight: 500;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 480px) {
+  .theme-switcher {
+    padding: 3px 6px;
+    gap: 3px;
+  }
+  
+  .theme-btn {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .theme-label {
+    display: none;
+  }
+}
