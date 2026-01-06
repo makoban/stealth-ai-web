@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.14';
+const APP_VERSION = 'v3.15';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -42,6 +42,14 @@ const THEME_LABELS: Record<ColorTheme, string> = {
 
 // 文字サイズの型定義
 type FontSize = 'xs' | 'sm' | 'md' | 'lg';
+
+// 文字サイズラベル
+const FONTSIZE_LABELS: Record<FontSize, string> = {
+  xs: '極小',
+  sm: '小',
+  md: '中',
+  lg: '大',
+};
 
 
 
@@ -676,62 +684,44 @@ export default function App() {
       {/* ヘッダー */}
       <header className="header">
         <div className="header-left">
-          <h1>🌟 {APP_NAME}</h1>
-          <span className="version-badge">{APP_VERSION}</span>
+          {/* ロゴ（タップでバージョン表示） */}
+          <h1 
+            className="app-logo" 
+            onClick={() => alert(`${APP_NAME} ${APP_VERSION}`)}
+            title={`${APP_NAME} ${APP_VERSION}`}
+          >
+            🌟 K+
+          </h1>
           <div
             className="connection-indicator"
             style={{ backgroundColor: getConnectionColor() }}
           />
-          {/* テーマ切り替えボタン */}
-          <div className="theme-switcher">
-            <button
-              className={`theme-btn business ${colorTheme === 'business' ? 'active' : ''}`}
-              onClick={() => setColorTheme('business')}
-              title="ビジネス（白と黒）"
-            />
-            <button
-              className={`theme-btn natural ${colorTheme === 'natural' ? 'active' : ''}`}
-              onClick={() => setColorTheme('natural')}
-              title="ナチュラル（薄い青と白）"
-            />
-            <button
-              className={`theme-btn pop ${colorTheme === 'pop' ? 'active' : ''}`}
-              onClick={() => setColorTheme('pop')}
-              title="ポップ（ピンク系）"
-            />
-            <span className="theme-label">{THEME_LABELS[colorTheme]}</span>
-          </div>
-          {/* 文字サイズ切り替えボタン */}
-          <div className="fontsize-switcher">
-            <button
-              className={`fontsize-btn xs ${fontSize === 'xs' ? 'active' : ''}`}
-              onClick={() => setFontSize('xs')}
-              title="極小"
-            >
-              A
-            </button>
-            <button
-              className={`fontsize-btn sm ${fontSize === 'sm' ? 'active' : ''}`}
-              onClick={() => setFontSize('sm')}
-              title="小"
-            >
-              A
-            </button>
-            <button
-              className={`fontsize-btn md ${fontSize === 'md' ? 'active' : ''}`}
-              onClick={() => setFontSize('md')}
-              title="中"
-            >
-              A
-            </button>
-            <button
-              className={`fontsize-btn lg ${fontSize === 'lg' ? 'active' : ''}`}
-              onClick={() => setFontSize('lg')}
-              title="大"
-            >
-              A
-            </button>
-          </div>
+          {/* テーマ切り替えアイコン（タップで順次切り替え） */}
+          <button
+            className="icon-btn theme-icon-btn"
+            onClick={() => {
+              const themes: ColorTheme[] = ['business', 'natural', 'pop'];
+              const currentIndex = themes.indexOf(colorTheme);
+              const nextIndex = (currentIndex + 1) % themes.length;
+              setColorTheme(themes[nextIndex]);
+            }}
+            title={`テーマ: ${THEME_LABELS[colorTheme]}（タップで切り替え）`}
+          >
+            🎨
+          </button>
+          {/* 文字サイズ切り替えアイコン（タップで順次切り替え） */}
+          <button
+            className="icon-btn fontsize-icon-btn"
+            onClick={() => {
+              const sizes: FontSize[] = ['xs', 'sm', 'md', 'lg'];
+              const currentIndex = sizes.indexOf(fontSize);
+              const nextIndex = (currentIndex + 1) % sizes.length;
+              setFontSize(sizes[nextIndex]);
+            }}
+            title={`文字サイズ: ${FONTSIZE_LABELS[fontSize]}（タップで切り替え）`}
+          >
+            🔤
+          </button>
         </div>
         <div className="header-right">
           <UserMenu />
