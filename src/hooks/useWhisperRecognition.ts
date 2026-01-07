@@ -7,10 +7,19 @@ export interface UseWhisperRecognitionOptions {
   intervalMs?: number;
   silenceThreshold?: number;
   whisperPrompt?: string;
-  onBufferReady?: (text: string) => void; // Gemini送信用コールバック
+  onBufferReady?: (text: string) => void;
 }
 
-// 幻覚フレーズ（完全一致）
+// デバッグモード
+const DEBUG = true;
+const log = (category: string, ...args: unknown[]) => {
+  if (DEBUG) {
+    const time = new Date().toISOString().slice(11, 23);
+    console.log(`[${time}][${category}]`, ...args);
+  }
+};
+
+// 幻覚フレーズ
 const HALLUCINATION_EXACT = [
   'ご視聴ありがとうございました', 'ご視聴ありがとうございます',
   'ありがとうございました', 'ありがとうございます',
@@ -19,7 +28,6 @@ const HALLUCINATION_EXACT = [
   '...', '。。。', '…',
 ];
 
-// 幻覚フレーズ（部分一致）
 const HALLUCINATION_PARTIAL = [
   'チャンネル登録', 'ご視聴', '視聴', '次回', '次の動画',
 ];
@@ -40,7 +48,6 @@ function isHallucination(text: string): boolean {
   return false;
 }
 
-// 横幅とフォントサイズから表示可能文字数を計算
 function calculateMaxChars(): number {
   const realtimeElement = document.querySelector('.realtime-text');
   if (!realtimeElement) return 15;
@@ -77,20 +84,20 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const recorderRef = useRef<AudioRecorder | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   
-  // リアルタイム表示用（Geminiとは別管理）
+  // リアルタイム表示用
   const displayTextRef = useRef<string>('');
   const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const typingQueueRef = useRef<string[]>([]); // タイプライター待ちキュー
+  const typingQueueRef = useRef<string[]>([]);
   const isTypingRef = useRef<boolean>(false);
+  const typingTickCountRef = useRef<number>(0); // デバッグ用カウンター
   
-  // 動的な最大文字数
   const maxCharsRef = useRef<number>(15);
   
   // Whisper定期送信用
   const whisperIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const WHISPER_INTERVAL = 1500;
   
-  // Gemini送信用（リアルタイム表示とは別管理）
+  // Gemini送信用
   const geminiBufferRef = useRef<string>('');
   const geminiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const GEMINI_FLUSH_DELAY = 400;
@@ -120,61 +127,96 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // スクロール表示
   const getScrolledText = useCallback((text: string) => {
     const maxChars = maxCharsRef.current;
     if (text.length <= maxChars) return text;
     return '...' + text.slice(-maxChars);
   }, []);
 
-  // タイプライター処理（キューから1つずつ処理）
+  // タイプライター処理
   const processTypingQueue = useCallback(() => {
-    if (isTypingRef.current || typingQueueRef.current.length === 0) return;
+    log('TYPING', `processTypingQueue called - isTyping: ${isTypingRef.current}, queueLength: ${typingQueueRef.current.length}`);
+    
+    if (isTypingRef.current) {
+      log('TYPING', 'Already typing, skipping');
+      return;
+    }
+    
+    if (typingQueueRef.current.length === 0) {
+      log('TYPING', 'Queue empty, nothing to process');
+      return;
+    }
     
     const nextText = typingQueueRef.current.shift()!;
+    log('TYPING', `Starting to type: "${nextText}"`);
     isTypingRef.current = true;
+    typingTickCountRef.current = 0;
     
-    // 既存テキストに追加
     const startText = displayTextRef.current;
     const fullText = startText ? startText + ' ' + nextText : nextText;
     let charIndex = startText.length;
     
+    log('TYPING', `startText: "${startText}", fullText: "${fullText}", startIndex: ${charIndex}`);
+    
+    // 既存タイマーをクリア
+    if (typingTimerRef.current) {
+      log('TYPING', 'Clearing existing timer');
+      clearInterval(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    
     typingTimerRef.current = setInterval(() => {
+      typingTickCountRef.current++;
       charIndex++;
+      
       if (charIndex <= fullText.length) {
         displayTextRef.current = fullText.slice(0, charIndex);
-        setInterimTranscript(`💬 ${getScrolledText(displayTextRef.current)}`);
+        const scrolled = getScrolledText(displayTextRef.current);
+        setInterimTranscript(`💬 ${scrolled}`);
+        
+        if (typingTickCountRef.current % 10 === 0) {
+          log('TYPING', `Tick ${typingTickCountRef.current}: charIndex=${charIndex}/${fullText.length}, displayed="${displayTextRef.current.slice(-20)}"`);
+        }
       }
       
       if (charIndex >= fullText.length) {
+        log('TYPING', `Completed: "${fullText}" after ${typingTickCountRef.current} ticks`);
         if (typingTimerRef.current) {
           clearInterval(typingTimerRef.current);
           typingTimerRef.current = null;
         }
         isTypingRef.current = false;
-        // 次のキューを処理
-        processTypingQueue();
+        
+        // 次のキューを処理（少し遅延を入れる）
+        setTimeout(() => {
+          log('TYPING', 'Checking next queue item');
+          processTypingQueue();
+        }, 10);
       }
     }, 50);
+    
+    log('TYPING', `Timer started: ${typingTimerRef.current}`);
   }, [getScrolledText]);
 
-  // テキストをタイプライターキューに追加
   const addToTypingQueue = useCallback((text: string) => {
+    log('QUEUE', `Adding to queue: "${text}", current queue length: ${typingQueueRef.current.length}`);
     typingQueueRef.current.push(text);
+    log('QUEUE', `Queue after add: [${typingQueueRef.current.map(t => `"${t}"`).join(', ')}]`);
     processTypingQueue();
   }, [processTypingQueue]);
 
-  // Gemini送信（リアルタイム表示とは独立）
   const flushGeminiBuffer = useCallback(() => {
     const buffer = geminiBufferRef.current.trim();
+    log('GEMINI', `flushGeminiBuffer called - buffer: "${buffer.slice(0, 50)}..."`);
+    
     if (buffer && onBufferReadyRef.current) {
-      console.log('[Whisper] Sending to Gemini:', buffer);
+      log('GEMINI', 'Sending to Gemini');
       onBufferReadyRef.current(buffer);
       
-      // Geminiバッファのみクリア（リアルタイム表示は維持）
       geminiBufferRef.current = '';
       
       // リアルタイム表示をクリア
+      log('GEMINI', `Clearing display - isTyping: ${isTypingRef.current}, timer: ${typingTimerRef.current}`);
       displayTextRef.current = '';
       typingQueueRef.current = [];
       if (typingTimerRef.current) {
@@ -183,17 +225,22 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       }
       isTypingRef.current = false;
       setInterimTranscript('🎤 次の音声を待機中...');
+      log('GEMINI', 'Display cleared');
     }
   }, []);
 
-  // Geminiタイマーリセット
   const resetGeminiTimer = useCallback(() => {
+    log('TIMER', `resetGeminiTimer called - buffer: "${geminiBufferRef.current.slice(0, 30)}..."`);
     if (geminiTimerRef.current) {
       clearTimeout(geminiTimerRef.current);
       geminiTimerRef.current = null;
     }
     if (geminiBufferRef.current.trim()) {
-      geminiTimerRef.current = setTimeout(flushGeminiBuffer, GEMINI_FLUSH_DELAY);
+      geminiTimerRef.current = setTimeout(() => {
+        log('TIMER', 'Gemini timer fired');
+        flushGeminiBuffer();
+      }, GEMINI_FLUSH_DELAY);
+      log('TIMER', `Gemini timer set for ${GEMINI_FLUSH_DELAY}ms`);
     }
   }, [flushGeminiBuffer]);
 
@@ -204,13 +251,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // Whisper送信
   const sendToWhisper = useCallback(async () => {
     if (!recorderRef.current || isProcessingRef.current || !recorderRef.current.isRecording()) {
       return;
     }
 
     const maxLevel = maxAudioLevelRef.current;
+    log('WHISPER', `sendToWhisper - maxLevel: ${maxLevel.toFixed(3)}, threshold: ${silenceThreshold}`);
+    
     if (maxLevel < silenceThreshold) {
       recorderRef.current.getIntermediateBlob();
       maxAudioLevelRef.current = 0;
@@ -220,43 +268,47 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     const blob = recorderRef.current.getIntermediateBlob();
     maxAudioLevelRef.current = 0;
     
-    if (!blob || blob.size < 1000) return;
+    if (!blob || blob.size < 1000) {
+      log('WHISPER', `Blob too small: ${blob?.size || 0}`);
+      return;
+    }
 
+    log('WHISPER', `Sending blob: ${blob.size} bytes`);
     isProcessingRef.current = true;
     setProcessingStatus('Whisper送信中...');
 
     try {
       const result = await transcribeAudio(blob, whisperPromptRef.current);
+      log('WHISPER', `Result: "${result.text}"`);
       
       if (result.text && result.text.trim()) {
         const newText = result.text.trim();
         
         if (isHallucination(newText)) {
+          log('WHISPER', 'Hallucination detected, ignoring');
           setProcessingStatus('ノイズ除去');
         } else {
-          console.log('[Whisper] Recognized:', newText);
+          log('WHISPER', `Valid text: "${newText}"`);
           
-          // Geminiバッファに追加
           geminiBufferRef.current = geminiBufferRef.current 
             ? geminiBufferRef.current + ' ' + newText 
             : newText;
+          log('WHISPER', `Gemini buffer: "${geminiBufferRef.current.slice(0, 50)}..."`);
           
-          // タイプライターキューに追加（リアルタイム表示用）
           addToTypingQueue(newText);
           
-          // transcript更新
           setTranscript(prev => prev ? prev + '\n' + newText : newText);
           setProcessingStatus('認識成功');
           
-          // Geminiタイマーリセット
           lastSpeechTimeRef.current = Date.now();
           resetGeminiTimer();
         }
       } else {
+        log('WHISPER', 'No text in result');
         setProcessingStatus('音声なし');
       }
     } catch (e) {
-      console.error('[Whisper] Error:', e);
+      log('WHISPER', `Error: ${e}`);
       setProcessingStatus('エラー');
     } finally {
       isProcessingRef.current = false;
@@ -269,10 +321,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       return;
     }
 
+    log('START', 'Starting listening...');
     setError(null);
     setState('starting');
     
-    // 全てリセット
     geminiBufferRef.current = '';
     displayTextRef.current = '';
     typingQueueRef.current = [];
@@ -280,9 +332,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     maxAudioLevelRef.current = 0;
     lastSpeechTimeRef.current = Date.now();
     
-    // 最大文字数を計算
     maxCharsRef.current = calculateMaxChars();
-    console.log('[Whisper] Max display chars:', maxCharsRef.current);
+    log('START', `Max chars: ${maxCharsRef.current}`);
 
     try {
       const recorder = new AudioRecorder();
@@ -300,20 +351,18 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         
         if (isSpeaking) {
           lastSpeechTimeRef.current = Date.now();
-          // 発話中はGeminiタイマーをクリア
           if (geminiTimerRef.current) {
             clearTimeout(geminiTimerRef.current);
             geminiTimerRef.current = null;
           }
         } else {
-          // 無音が続いたらGeminiタイマー開始
           const silenceDuration = Date.now() - lastSpeechTimeRef.current;
           if (silenceDuration >= GEMINI_FLUSH_DELAY && geminiBufferRef.current.trim() && !geminiTimerRef.current) {
             resetGeminiTimer();
           }
         }
         
-        // リアルタイム表示更新（タイプライター中でなければ）
+        // リアルタイム表示更新
         if (!isTypingRef.current && !isProcessingRef.current) {
           if (isSpeaking) {
             if (displayTextRef.current) {
@@ -331,22 +380,23 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('listening');
       setProcessingStatus('解析中');
       
-      // Whisper定期送信開始
       whisperIntervalRef.current = setInterval(() => {
         sendToWhisper();
       }, WHISPER_INTERVAL);
+      
+      log('START', 'Listening started');
 
     } catch (e) {
-      console.error('[Whisper] Failed to start:', e);
+      log('START', `Error: ${e}`);
       setError('マイクの使用が許可されていません');
       setState('idle');
     }
   }, [isSupported, currentGain, sendToWhisper, resetGeminiTimer, getScrolledText]);
 
   const stopListening = useCallback(async () => {
+    log('STOP', 'Stopping...');
     setState('stopping');
 
-    // タイマークリア
     if (typingTimerRef.current) {
       clearInterval(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -360,8 +410,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       geminiTimerRef.current = null;
     }
     
-    // 残りバッファをGeminiに送信
     if (geminiBufferRef.current.trim() && onBufferReadyRef.current) {
+      log('STOP', `Sending remaining buffer: "${geminiBufferRef.current.slice(0, 50)}..."`);
       onBufferReadyRef.current(geminiBufferRef.current.trim());
     }
     
@@ -387,7 +437,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             }
           }
         } catch (e) {
-          console.error('[Whisper] Final error:', e);
+          log('STOP', `Final error: ${e}`);
         }
       }
       
@@ -400,6 +450,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setAudioLevel(0);
     setProcessingStatus('');
     maxAudioLevelRef.current = 0;
+    log('STOP', 'Stopped');
   }, [silenceThreshold]);
 
   const clearTranscript = useCallback(() => {
