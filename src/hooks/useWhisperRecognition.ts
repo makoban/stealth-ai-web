@@ -101,7 +101,18 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // タイプライターアニメーション（新しいテキストを追加）
+  // 20文字スクロール表示用のヘルパー
+  const MAX_DISPLAY_CHARS = 20;
+  
+  const getScrolledText = useCallback((text: string) => {
+    if (text.length <= MAX_DISPLAY_CHARS) {
+      return text;
+    }
+    // 20文字を超えたら最新の20文字を表示（左スクロール）
+    return '...' + text.slice(-MAX_DISPLAY_CHARS);
+  }, []);
+
+  // タイプライターアニメーション（新しいテキストを追加、20文字スクロール）
   const appendTyping = useCallback((newText: string) => {
     // 既存のタイマーをクリア
     if (typingTimerRef.current) {
@@ -118,7 +129,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       typingIndexRef.current++;
       const displayed = typingTextRef.current.slice(0, typingIndexRef.current);
       displayedTextRef.current = displayed;
-      setInterimTranscript(`💬 ${displayed}`);
+      // 20文字スクロール表示
+      setInterimTranscript(`💬 ${getScrolledText(displayed)}`);
       
       // 全文字表示したらタイマー停止
       if (typingIndexRef.current >= typingTextRef.current.length) {
@@ -128,7 +140,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         }
       }
     }, 50);
-  }, []);
+  }, [getScrolledText]);
 
   // GeminiバッファをフラッシュしてGemini送信
   const flushGeminiBuffer = useCallback(() => {
@@ -274,7 +286,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         if (!typingTimerRef.current && !isProcessingRef.current) {
           if (isSpeaking) {
             if (displayedTextRef.current) {
-              setInterimTranscript(`🔊 ${displayedTextRef.current}...`);
+              // 20文字スクロール表示
+              const scrolled = displayedTextRef.current.length > 20 
+                ? '...' + displayedTextRef.current.slice(-20) 
+                : displayedTextRef.current;
+              setInterimTranscript(`🔊 ${scrolled}...`);
             } else {
               setInterimTranscript('🔊 聴いています...');
             }
