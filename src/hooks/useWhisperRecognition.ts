@@ -42,24 +42,18 @@ function isHallucination(text: string): boolean {
 
 // 横幅とフォントサイズから表示可能文字数を計算
 function calculateMaxChars(): number {
-  // リアルタイム欄の横幅を取得
   const realtimeElement = document.querySelector('.realtime-text');
-  if (!realtimeElement) return 15; // デフォルト値
+  if (!realtimeElement) return 15;
   
   const computedStyle = window.getComputedStyle(realtimeElement);
   const width = realtimeElement.clientWidth;
   const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
   const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
-  const availableWidth = width - paddingLeft - paddingRight - 30; // 30pxはアイコン分
-  
-  // フォントサイズを取得（CSS変数から）
+  const availableWidth = width - paddingLeft - paddingRight - 30;
   const fontSize = parseFloat(computedStyle.fontSize) || 16;
-  
-  // 日本語は全角なので、フォントサイズ ≒ 文字幅
-  // 80%の余裕を持たせる
   const maxChars = Math.floor((availableWidth / fontSize) * 0.8);
   
-  return Math.max(10, maxChars); // 最低10文字
+  return Math.max(10, maxChars);
 }
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
@@ -83,26 +77,25 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const recorderRef = useRef<AudioRecorder | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   
-  // タイプライター用
+  // リアルタイム表示用（Geminiとは別管理）
+  const displayTextRef = useRef<string>('');
   const typingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const typingIndexRef = useRef<number>(0);
-  const typingTextRef = useRef<string>('');
-  const displayedTextRef = useRef<string>(''); // 現在表示中のテキスト
+  const typingQueueRef = useRef<string[]>([]); // タイプライター待ちキュー
+  const isTypingRef = useRef<boolean>(false);
   
   // 動的な最大文字数
   const maxCharsRef = useRef<number>(15);
   
-  // Whisper定期送信用（1.5秒ごと）
+  // Whisper定期送信用
   const whisperIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const WHISPER_INTERVAL = 1500; // 1.5秒ごとにWhisper送信
+  const WHISPER_INTERVAL = 1500;
   
-  // Gemini送信用バッファ
+  // Gemini送信用（リアルタイム表示とは別管理）
   const geminiBufferRef = useRef<string>('');
   const geminiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isSendingToGeminiRef = useRef<boolean>(false); // Gemini送信中フラグ
-  const GEMINI_FLUSH_DELAY = 400; // 0.4秒無音でGemini送信
+  const GEMINI_FLUSH_DELAY = 400;
   
-  // VAD用（Gemini送信トリガー）
+  // VAD用
   const lastSpeechTimeRef = useRef<number>(Date.now());
   const VAD_SPEECH_THRESHOLD = 0.015;
   
@@ -127,98 +120,77 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // 横幅・フォントサイズから最大文字数を計算
-  const updateMaxChars = useCallback(() => {
-    maxCharsRef.current = calculateMaxChars();
-    console.log('[Whisper] Max display chars:', maxCharsRef.current);
-  }, []);
-
-  // スクロール表示用のヘルパー（動的な最大文字数）
+  // スクロール表示
   const getScrolledText = useCallback((text: string) => {
     const maxChars = maxCharsRef.current;
-    if (text.length <= maxChars) {
-      return text;
-    }
-    // 最大文字数を超えたら最新の文字を表示（左スクロール）
+    if (text.length <= maxChars) return text;
     return '...' + text.slice(-maxChars);
   }, []);
 
-  // タイプライターアニメーション（新しいテキストを追加、動的スクロール）
-  const appendTyping = useCallback((newText: string) => {
-    // 既存のタイマーをクリア
-    if (typingTimerRef.current) {
-      clearInterval(typingTimerRef.current);
-    }
+  // タイプライター処理（キューから1つずつ処理）
+  const processTypingQueue = useCallback(() => {
+    if (isTypingRef.current || typingQueueRef.current.length === 0) return;
     
-    // 新しいテキストを追加
-    const fullText = displayedTextRef.current ? displayedTextRef.current + ' ' + newText : newText;
-    typingTextRef.current = fullText;
-    typingIndexRef.current = displayedTextRef.current.length; // 既存部分はスキップ
+    const nextText = typingQueueRef.current.shift()!;
+    isTypingRef.current = true;
     
-    // 50msごとに1文字追加
+    // 既存テキストに追加
+    const startText = displayTextRef.current;
+    const fullText = startText ? startText + ' ' + nextText : nextText;
+    let charIndex = startText.length;
+    
     typingTimerRef.current = setInterval(() => {
-      typingIndexRef.current++;
-      const displayed = typingTextRef.current.slice(0, typingIndexRef.current);
-      displayedTextRef.current = displayed;
-      // 動的スクロール表示
-      setInterimTranscript(`💬 ${getScrolledText(displayed)}`);
+      charIndex++;
+      if (charIndex <= fullText.length) {
+        displayTextRef.current = fullText.slice(0, charIndex);
+        setInterimTranscript(`💬 ${getScrolledText(displayTextRef.current)}`);
+      }
       
-      // 全文字表示したらタイマー停止
-      if (typingIndexRef.current >= typingTextRef.current.length) {
+      if (charIndex >= fullText.length) {
         if (typingTimerRef.current) {
           clearInterval(typingTimerRef.current);
           typingTimerRef.current = null;
         }
+        isTypingRef.current = false;
+        // 次のキューを処理
+        processTypingQueue();
       }
     }, 50);
   }, [getScrolledText]);
 
-  // GeminiバッファをフラッシュしてGemini送信（バッファコピー方式）
+  // テキストをタイプライターキューに追加
+  const addToTypingQueue = useCallback((text: string) => {
+    typingQueueRef.current.push(text);
+    processTypingQueue();
+  }, [processTypingQueue]);
+
+  // Gemini送信（リアルタイム表示とは独立）
   const flushGeminiBuffer = useCallback(() => {
     const buffer = geminiBufferRef.current.trim();
-    if (buffer && onBufferReadyRef.current && !isSendingToGeminiRef.current) {
-      console.log('[Whisper] Flushing to Gemini:', buffer);
+    if (buffer && onBufferReadyRef.current) {
+      console.log('[Whisper] Sending to Gemini:', buffer);
+      onBufferReadyRef.current(buffer);
       
-      // 送信するテキストをコピー
-      const textToSend = buffer;
+      // Geminiバッファのみクリア（リアルタイム表示は維持）
+      geminiBufferRef.current = '';
       
-      // 送信中フラグを立てる
-      isSendingToGeminiRef.current = true;
-      
-      // コピー分だけバッファからクリア
-      // 送信中に新しいテキストが追加された場合、その分は残る
-      const currentBuffer = geminiBufferRef.current;
-      if (currentBuffer.startsWith(textToSend)) {
-        geminiBufferRef.current = currentBuffer.slice(textToSend.length).trim();
-      } else {
-        geminiBufferRef.current = '';
+      // リアルタイム表示をクリア
+      displayTextRef.current = '';
+      typingQueueRef.current = [];
+      if (typingTimerRef.current) {
+        clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
       }
-      
-      // リアルタイム表示をクリア（新しいバッファがあればそれを表示）
-      if (geminiBufferRef.current) {
-        displayedTextRef.current = geminiBufferRef.current;
-        typingTextRef.current = geminiBufferRef.current;
-        typingIndexRef.current = geminiBufferRef.current.length;
-        setInterimTranscript(`💬 ${getScrolledText(geminiBufferRef.current)}`);
-      } else {
-        displayedTextRef.current = '';
-        typingTextRef.current = '';
-        typingIndexRef.current = 0;
-        setInterimTranscript('🎤 次の音声を待機中...');
-      }
-      
-      // Geminiに送信
-      onBufferReadyRef.current(textToSend);
-      
-      // 送信完了
-      isSendingToGeminiRef.current = false;
+      isTypingRef.current = false;
+      setInterimTranscript('🎤 次の音声を待機中...');
     }
-  }, [getScrolledText]);
+  }, []);
 
-  // Geminiタイマーリセット（0.4秒無音でGemini送信）
+  // Geminiタイマーリセット
   const resetGeminiTimer = useCallback(() => {
     if (geminiTimerRef.current) {
       clearTimeout(geminiTimerRef.current);
+      geminiTimerRef.current = null;
     }
     if (geminiBufferRef.current.trim()) {
       geminiTimerRef.current = setTimeout(flushGeminiBuffer, GEMINI_FLUSH_DELAY);
@@ -232,15 +204,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // Whisper送信（定期的に呼ばれる）
+  // Whisper送信
   const sendToWhisper = useCallback(async () => {
     if (!recorderRef.current || isProcessingRef.current || !recorderRef.current.isRecording()) {
       return;
     }
 
     const maxLevel = maxAudioLevelRef.current;
-    
-    // 無音の場合はスキップ
     if (maxLevel < silenceThreshold) {
       recorderRef.current.getIntermediateBlob();
       maxAudioLevelRef.current = 0;
@@ -267,20 +237,18 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           console.log('[Whisper] Recognized:', newText);
           
           // Geminiバッファに追加
-          if (geminiBufferRef.current) {
-            geminiBufferRef.current += ' ' + newText;
-          } else {
-            geminiBufferRef.current = newText;
-          }
+          geminiBufferRef.current = geminiBufferRef.current 
+            ? geminiBufferRef.current + ' ' + newText 
+            : newText;
           
-          // タイプライター表示（追加）
-          appendTyping(newText);
+          // タイプライターキューに追加（リアルタイム表示用）
+          addToTypingQueue(newText);
           
-          // transcript更新（会話欄用 - Gemini整形後に使用）
+          // transcript更新
           setTranscript(prev => prev ? prev + '\n' + newText : newText);
           setProcessingStatus('認識成功');
           
-          // 発話があったのでGeminiタイマーリセット
+          // Geminiタイマーリセット
           lastSpeechTimeRef.current = Date.now();
           resetGeminiTimer();
         }
@@ -293,7 +261,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     } finally {
       isProcessingRef.current = false;
     }
-  }, [silenceThreshold, appendTyping, resetGeminiTimer]);
+  }, [silenceThreshold, addToTypingQueue, resetGeminiTimer]);
 
   const startListening = useCallback(async () => {
     if (!isSupported) {
@@ -303,16 +271,18 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
     setError(null);
     setState('starting');
+    
+    // 全てリセット
     geminiBufferRef.current = '';
-    displayedTextRef.current = '';
-    typingTextRef.current = '';
-    typingIndexRef.current = 0;
+    displayTextRef.current = '';
+    typingQueueRef.current = [];
+    isTypingRef.current = false;
     maxAudioLevelRef.current = 0;
     lastSpeechTimeRef.current = Date.now();
-    isSendingToGeminiRef.current = false;
     
     // 最大文字数を計算
-    updateMaxChars();
+    maxCharsRef.current = calculateMaxChars();
+    console.log('[Whisper] Max display chars:', maxCharsRef.current);
 
     try {
       const recorder = new AudioRecorder();
@@ -344,15 +314,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         }
         
         // リアルタイム表示更新（タイプライター中でなければ）
-        if (!typingTimerRef.current && !isProcessingRef.current) {
+        if (!isTypingRef.current && !isProcessingRef.current) {
           if (isSpeaking) {
-            if (displayedTextRef.current) {
-              // 動的スクロール表示
-              setInterimTranscript(`🔊 ${getScrolledText(displayedTextRef.current)}...`);
+            if (displayTextRef.current) {
+              setInterimTranscript(`🔊 ${getScrolledText(displayTextRef.current)}...`);
             } else {
               setInterimTranscript('🔊 聴いています...');
             }
-          } else if (!displayedTextRef.current) {
+          } else if (!displayTextRef.current) {
             setInterimTranscript('🎤 音声を待機中...');
           }
         }
@@ -362,7 +331,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('listening');
       setProcessingStatus('解析中');
       
-      // Whisper定期送信開始（1.5秒ごと）
+      // Whisper定期送信開始
       whisperIntervalRef.current = setInterval(() => {
         sendToWhisper();
       }, WHISPER_INTERVAL);
@@ -372,7 +341,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setError('マイクの使用が許可されていません');
       setState('idle');
     }
-  }, [isSupported, currentGain, sendToWhisper, resetGeminiTimer, updateMaxChars, getScrolledText]);
+  }, [isSupported, currentGain, sendToWhisper, resetGeminiTimer, getScrolledText]);
 
   const stopListening = useCallback(async () => {
     setState('stopping');
@@ -397,8 +366,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
     
     geminiBufferRef.current = '';
-    displayedTextRef.current = '';
-    isSendingToGeminiRef.current = false;
+    displayTextRef.current = '';
+    typingQueueRef.current = [];
+    isTypingRef.current = false;
 
     if (recorderRef.current) {
       const finalBlob = recorderRef.current.stop();
@@ -436,9 +406,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setTranscript('');
     setInterimTranscript('');
     geminiBufferRef.current = '';
-    displayedTextRef.current = '';
-    typingTextRef.current = '';
-    typingIndexRef.current = 0;
+    displayTextRef.current = '';
+    typingQueueRef.current = [];
+    isTypingRef.current = false;
   }, []);
 
   useEffect(() => {
