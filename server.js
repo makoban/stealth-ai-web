@@ -282,6 +282,12 @@ app.use('/api', authenticateToken);
 // 静的ファイルの配信
 app.use(express.static(path.join(__dirname, 'dist')));
 
+// デバッグログエンドポイント（Web Speech APIの動作確認用）
+app.post('/api/debug-log', (req, res) => {
+  console.log('[WebSpeech Debug]', JSON.stringify(req.body));
+  res.json({ ok: true });
+});
+
 // ヘルスチェック
 app.get('/api/health', (req, res) => {
   res.json({ 

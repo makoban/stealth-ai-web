@@ -198,6 +198,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         let interim = '';
         let finalText = '';
         
+        // デバッグ: サーバーにログを送信
+        fetch('/api/debug-log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'webspeech_onresult', resultsLength: event.results.length })
+        }).catch(() => {});
+        
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
           if (result.isFinal) {
@@ -219,6 +226,15 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         
         // 蓄積した確定テキスト + 現在の仮テキスト
         const fullText = webSpeechFinalRef.current + interim;
+        
+        // デバッグ: 認識結果をサーバーに送信
+        if (fullText) {
+          fetch('/api/debug-log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'webspeech_text', text: fullText, interim, finalText })
+          }).catch(() => {});
+        }
         
         // 20文字を超えたら、最新の20文字のみを表示対象にする
         const MAX_DISPLAY_LENGTH = 20;
