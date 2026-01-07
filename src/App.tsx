@@ -165,7 +165,6 @@ export default function App() {
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
   const isSpeechDetected = whisper.isSpeechDetected;
-  const listenStatus = whisper.listenStatus; // アイコン表示用のステータス
   const isSupported = true;
   const speechError = whisper.error;
 
@@ -697,25 +696,6 @@ export default function App() {
             className="connection-indicator"
             style={{ backgroundColor: getConnectionColor() }}
           />
-          {/* リスニングステータスアイコン */}
-          {isListening && (
-            <span 
-              className={`listen-status-icon ${listenStatus}`}
-              title={{
-                idle: '停止中',
-                waiting: '音声を待機中',
-                listening: '聴いています',
-                processing: '解析中',
-              }[listenStatus]}
-            >
-              {{
-                idle: '⏸️',
-                waiting: '🎤',
-                listening: '🔊',
-                processing: '☁️',
-              }[listenStatus]}
-            </span>
-          )}
           {/* テーマ切り替えアイコン（タップで順次切り替え） */}
           <button
             className="icon-btn theme-icon-btn"
