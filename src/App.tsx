@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.18.6';
+const APP_VERSION = 'v3.18.7';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
