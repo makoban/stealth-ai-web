@@ -217,51 +217,22 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         // 蓄積した確定テキスト + 現在の仮テキスト
         const fullText = webSpeechFinalRef.current + interim;
         
-        // 20文字を超えたら、最新の20文字のみを表示対象にする
+        // 20文字を超えたら、最新の20文字のみを表示（スライド方式）
         const MAX_DISPLAY_LENGTH = 20;
         let newTargetText = fullText;
         if (fullText.length > MAX_DISPLAY_LENGTH) {
           // 最新の20文字を取得
           newTargetText = fullText.slice(-MAX_DISPLAY_LENGTH);
-          // 表示中のテキストもリセット（古い部分を削除）
-          displayedTextRef.current = '';
         }
         
         if (newTargetText && !isProcessingRef.current) {
-          // 目標テキストが変わったらアニメーション開始
+          // 目標テキストが変わったら即座に表示（アニメーションなしでスムーズに）
           if (newTargetText !== targetTextRef.current) {
             targetTextRef.current = newTargetText;
-            startTypingAnimation();
+            displayedTextRef.current = newTargetText;
+            setInterimTranscript(`💬 ${newTargetText}`);
           }
         }
-      };
-      
-      // 1文字ずつアニメーション表示
-      const startTypingAnimation = () => {
-        // 既存のアニメーションをキャンセル
-        if (animationTimerRef.current) {
-          clearTimeout(animationTimerRef.current);
-        }
-        
-        const animate = () => {
-          const target = targetTextRef.current;
-          const current = displayedTextRef.current;
-          
-          if (current.length < target.length) {
-            // 1文字追加
-            displayedTextRef.current = target.slice(0, current.length + 1);
-            setInterimTranscript(`💬 ${displayedTextRef.current}`);
-            
-            // 次の文字を表示（40ms間隔で高速に）
-            animationTimerRef.current = setTimeout(animate, 40);
-          } else if (current.length > target.length) {
-            // ターゲットが短くなった場合は即座に更新
-            displayedTextRef.current = target;
-            setInterimTranscript(`💬 ${target}`);
-          }
-        };
-        
-        animate();
       };
 
       recognition.onerror = (event: any) => {
@@ -501,11 +472,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             speechStartTimeRef.current = now;
             console.log('[VAD] Speech started');
           }
-          // 発話中の秒数を表示
-          // Web Speechの仮テキストがあればそれを表示、なければステータス表示
-          if (webSpeechInterimRef.current && !isProcessingRef.current) {
-            setInterimTranscript(`💬 ${webSpeechInterimRef.current}`);
-          } else if (!isProcessingRef.current) {
+          // Web Speechのテキストがある場合は上書きしない（アニメーション表示を優先）
+          // targetTextRefに値がある場合はWeb Speechがアクティブなのでステータス表示をスキップ
+          if (!targetTextRef.current && !isProcessingRef.current) {
             const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
             setInterimTranscript(`🔊 聴いています... (${speechDuration}秒)`);
           }
@@ -527,7 +496,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           // 無音
           if (speechStartTimeRef.current === null && !isProcessingRef.current) {
             // まだ発話が始まっていない
-            setInterimTranscript('🎤 音声を待機中...');
+            // Web Speechのテキストがある場合は上書きしない
+            if (!targetTextRef.current) {
+              setInterimTranscript('🎤 音声を待機中...');
+            }
           }
           if (speechStartTimeRef.current !== null) {
             // 発話後の無音
