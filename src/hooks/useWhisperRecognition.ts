@@ -194,46 +194,16 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       recognition.interimResults = true; // 仮結果を取得
 
       recognition.onresult = (event: any) => {
-        let interim = '';
-        let finalText = '';
+        // シンプルに、今聞こえたテキストをそのまま表示
+        let currentText = '';
         
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          if (result.isFinal) {
-            // 確定したテキストを蓄積
-            finalText += result[0].transcript;
-          } else {
-            // 仮テキスト
-            interim += result[0].transcript;
-          }
+        for (let i = 0; i < event.results.length; i++) {
+          currentText += event.results[i][0].transcript;
         }
         
-        // 確定テキストがあれば蓄積
-        if (finalText) {
-          webSpeechFinalRef.current += finalText;
-        }
-        
-        // 仮テキストを更新
-        webSpeechInterimRef.current = interim;
-        
-        // 蓄積した確定テキスト + 現在の仮テキスト
-        const fullText = webSpeechFinalRef.current + interim;
-        
-        // 20文字を超えたら、最新の20文字のみを表示（スライド方式）
-        const MAX_DISPLAY_LENGTH = 20;
-        let newTargetText = fullText;
-        if (fullText.length > MAX_DISPLAY_LENGTH) {
-          // 最新の20文字を取得
-          newTargetText = fullText.slice(-MAX_DISPLAY_LENGTH);
-        }
-        
-        if (newTargetText && !isProcessingRef.current) {
-          // 目標テキストが変わったら即座に表示（純粋なテキストのみ、絵文字なし）
-          if (newTargetText !== targetTextRef.current) {
-            targetTextRef.current = newTargetText;
-            displayedTextRef.current = newTargetText;
-            setInterimTranscript(newTargetText);
-          }
+        // 聞こえたテキストをそのまま表示（何も加工しない）
+        if (currentText && !isProcessingRef.current) {
+          setInterimTranscript(currentText);
         }
       };
 
