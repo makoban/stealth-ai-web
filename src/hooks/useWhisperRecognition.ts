@@ -214,8 +214,19 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         // 仮テキストを更新
         webSpeechInterimRef.current = interim;
         
-        // 蓄積した確定テキスト + 現在の仮テキストをアニメーション表示
-        const newTargetText = webSpeechFinalRef.current + interim;
+        // 蓄積した確定テキスト + 現在の仮テキスト
+        const fullText = webSpeechFinalRef.current + interim;
+        
+        // 20文字を超えたら、最新の20文字のみを表示対象にする
+        const MAX_DISPLAY_LENGTH = 20;
+        let newTargetText = fullText;
+        if (fullText.length > MAX_DISPLAY_LENGTH) {
+          // 最新の20文字を取得
+          newTargetText = fullText.slice(-MAX_DISPLAY_LENGTH);
+          // 表示中のテキストもリセット（古い部分を削除）
+          displayedTextRef.current = '';
+        }
+        
         if (newTargetText && !isProcessingRef.current) {
           // 目標テキストが変わったらアニメーション開始
           if (newTargetText !== targetTextRef.current) {
