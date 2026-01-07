@@ -7,6 +7,7 @@ export interface UseWhisperRecognitionOptions {
   intervalMs?: number; // 音声を送信する間隔（ミリ秒）
   silenceThreshold?: number; // 無音と判定する閾値（0-1）
   whisperPrompt?: string; // Whisper APIに渡すプロンプト（固有名詞のヒント）
+  onBufferReady?: (text: string) => void; // バッファが準備できた時のコールバック（Gemini送信用）
 }
 
 // Whisperの幻覚（hallucination）としてよく出るフレーズ
@@ -119,6 +120,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const {
     silenceThreshold = 0.05, // 5%以下は無音と判定
     whisperPrompt = '', // Whisperに渡すプロンプト
+    onBufferReady, // バッファ準備完了コールバック
   } = options;
 
   const [transcript, setTranscript] = useState<string>('');
@@ -136,29 +138,36 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
   
-  // Web Speech API用（リアルタイム仮テキスト表示用）
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const webSpeechRef = useRef<any>(null);
-  const webSpeechInterimRef = useRef<string>(''); // Web Speechの仮テキスト
-  const webSpeechFinalRef = useRef<string>(''); // Web Speechの確定テキスト（蓄積）
-  
-  // アニメーション表示用
+  // タイプライターアニメーション用
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const displayedTextRef = useRef<string>(''); // 現在表示中のテキスト
-  const targetTextRef = useRef<string>(''); // 目標テキスト
+  const targetTextRef = useRef<string>(''); // 目標テキスト（タイプライター用）
+  
+  // ダブルバッファ方式（取りこぼし防止）
+  const bufferARef = useRef<string>(''); // バッファA
+  const bufferBRef = useRef<string>(''); // バッファB
+  const activeBufferRef = useRef<'A' | 'B'>('A'); // 現在書き込み中のバッファ
+  const bufferSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 0.4秒無音タイマー
+  const BUFFER_SILENCE_DURATION = 400; // バッファ送信までの無音時間（0.4秒）
   
   const whisperPromptRef = useRef<string>(whisperPrompt);
+  const onBufferReadyRef = useRef(onBufferReady);
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
   const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
   
-  // VAD（無音検出）用 - 無音0.5秒で送信
+  // VAD（無音検出）用 - 無音0.4秒で送信
   const speechStartTimeRef = useRef<number | null>(null); // 発話開始時刻
   const silenceStartTimeRef = useRef<number | null>(null); // 無音開始時刻
   const vadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // VADタイムアウト
   const VAD_SILENCE_DURATION = 400; // 無音と判定する時間（0.4秒）
   const VAD_MIN_SPEECH_DURATION = 300; // 最低発話時間（0.3秒）
-  const VAD_MAX_SPEECH_DURATION = 15000; // 最大発話時間（15秒）- 長すぎるので短縮
-  const VAD_SPEECH_THRESHOLD = 0.015; // 発話と判定する閾値をさらに下げて敏感に（1.5%）
+  const VAD_MAX_SPEECH_DURATION = 15000; // 最大発話時間（15秒）
+  const VAD_SPEECH_THRESHOLD = 0.015; // 発話と判定する閾値（1.5%）
+
+  // コールバックをrefで保持
+  useEffect(() => {
+    onBufferReadyRef.current = onBufferReady;
+  }, [onBufferReady]);
 
   // プロンプトをrefで保持（再レンダリングを防ぐ）
   useEffect(() => {
@@ -176,156 +185,100 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // Web Speech APIの開始（リアルタイム仮テキスト表示用）
-  const startWebSpeech = useCallback(() => {
-    // Web Speech APIが利用可能かチェック
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.log('[WebSpeech] Not supported');
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'ja-JP';
-      recognition.continuous = true;
-      recognition.interimResults = true; // 仮結果を取得
-
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        let finalText = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          if (result.isFinal) {
-            // 確定したテキストを蓄積
-            finalText += result[0].transcript;
-          } else {
-            // 仮テキスト
-            interim += result[0].transcript;
-          }
-        }
-        
-        // 確定テキストがあれば蓄積
-        if (finalText) {
-          webSpeechFinalRef.current += finalText;
-        }
-        
-        // 仮テキストを更新
-        webSpeechInterimRef.current = interim;
-        
-        // 蓄積した確定テキスト + 現在の仮テキスト
-        const fullText = webSpeechFinalRef.current + interim;
-        
-        // 20文字を超えたら、最新の20文字のみを表示対象にする
-        const MAX_DISPLAY_LENGTH = 20;
-        let newTargetText = fullText;
-        if (fullText.length > MAX_DISPLAY_LENGTH) {
-          // 最新の20文字を取得
-          newTargetText = fullText.slice(-MAX_DISPLAY_LENGTH);
-          // 表示中のテキストもリセット（古い部分を削除）
-          displayedTextRef.current = '';
-        }
-        
-        if (newTargetText && !isProcessingRef.current) {
-          // 目標テキストが変わったらアニメーション開始
-          if (newTargetText !== targetTextRef.current) {
-            targetTextRef.current = newTargetText;
-            startTypingAnimation();
-          }
-        }
-      };
-      
-      // 1文字ずつアニメーション表示
-      const startTypingAnimation = () => {
-        // 既存のアニメーションをキャンセル
-        if (animationTimerRef.current) {
-          clearTimeout(animationTimerRef.current);
-        }
-        
-        const animate = () => {
-          const target = targetTextRef.current;
-          const current = displayedTextRef.current;
-          
-          if (current.length < target.length) {
-            // 1文字追加
-            displayedTextRef.current = target.slice(0, current.length + 1);
-            setInterimTranscript(`💬 ${displayedTextRef.current}`);
-            
-            // 次の文字を表示（40ms間隔で高速に）
-            animationTimerRef.current = setTimeout(animate, 40);
-          } else if (current.length > target.length) {
-            // ターゲットが短くなった場合は即座に更新
-            displayedTextRef.current = target;
-            setInterimTranscript(`💬 ${target}`);
-          }
-        };
-        
-        animate();
-      };
-
-      recognition.onerror = (event: any) => {
-        console.log('[WebSpeech] Error:', event.error);
-        // エラー時は再起動を試みる
-        if (event.error === 'no-speech' || event.error === 'aborted') {
-          setTimeout(() => {
-            if (webSpeechRef.current) {
-              try {
-                webSpeechRef.current.start();
-              } catch (e) {
-                // 既に開始している場合は無視
-              }
-            }
-          }, 100);
-        }
-      };
-
-      recognition.onend = () => {
-        console.log('[WebSpeech] Ended, restarting...');
-        // 録音中なら再起動
-        if (recorderRef.current?.isRecording()) {
-          setTimeout(() => {
-            if (webSpeechRef.current) {
-              try {
-                webSpeechRef.current.start();
-              } catch (e) {
-                // 既に開始している場合は無視
-              }
-            }
-          }, 100);
-        }
-      };
-
-      recognition.start();
-      webSpeechRef.current = recognition;
-      console.log('[WebSpeech] Started');
-    } catch (e) {
-      console.error('[WebSpeech] Failed to start:', e);
-    }
+  // アクティブバッファを取得
+  const getActiveBuffer = useCallback(() => {
+    return activeBufferRef.current === 'A' ? bufferARef : bufferBRef;
   }, []);
 
-  // Web Speech APIの停止
-  const stopWebSpeech = useCallback(() => {
-    // アニメーションタイマーをクリア
+  // アクティブバッファにテキストを追加
+  const appendToActiveBuffer = useCallback((text: string) => {
+    const buffer = getActiveBuffer();
+    if (buffer.current) {
+      buffer.current += ' ' + text;
+    } else {
+      buffer.current = text;
+    }
+    console.log(`[Buffer] Appended to buffer ${activeBufferRef.current}:`, buffer.current);
+  }, [getActiveBuffer]);
+
+  // バッファを切り替えてGeminiに送信
+  const swapAndFlushBuffer = useCallback(() => {
+    const currentBuffer = activeBufferRef.current;
+    const bufferToSend = currentBuffer === 'A' ? bufferARef : bufferBRef;
+    const textToSend = bufferToSend.current.trim();
+    
+    if (textToSend && onBufferReadyRef.current) {
+      console.log(`[Buffer] Swapping: ${currentBuffer} -> ${currentBuffer === 'A' ? 'B' : 'A'}`);
+      console.log(`[Buffer] Sending buffer ${currentBuffer} to Gemini:`, textToSend);
+      
+      // バッファを切り替え（次のWhisper結果は別のバッファに書き込まれる）
+      activeBufferRef.current = currentBuffer === 'A' ? 'B' : 'A';
+      
+      // 送信するバッファをクリア
+      bufferToSend.current = '';
+      
+      // Geminiに送信
+      onBufferReadyRef.current(textToSend);
+      
+      // 表示をリセット
+      displayedTextRef.current = '';
+      targetTextRef.current = '';
+      if (animationTimerRef.current) {
+        clearTimeout(animationTimerRef.current);
+        animationTimerRef.current = null;
+      }
+      
+      // 新しいアクティブバッファの内容を表示
+      const newActiveBuffer = getActiveBuffer();
+      if (newActiveBuffer.current) {
+        setInterimTranscript(`💬 ${newActiveBuffer.current}`);
+      } else {
+        setInterimTranscript('🎤 次の音声を待機中...');
+      }
+    }
+  }, [getActiveBuffer]);
+
+  // タイプライターアニメーション開始
+  const startTypingAnimation = useCallback((newText: string) => {
+    // 既存のアニメーションをキャンセル
     if (animationTimerRef.current) {
       clearTimeout(animationTimerRef.current);
-      animationTimerRef.current = null;
     }
-    displayedTextRef.current = '';
-    targetTextRef.current = '';
     
-    if (webSpeechRef.current) {
-      try {
-        webSpeechRef.current.stop();
-      } catch (e) {
-        // 無視
+    // 目標テキストを設定
+    targetTextRef.current = newText;
+    
+    const animate = () => {
+      const target = targetTextRef.current;
+      const current = displayedTextRef.current;
+      
+      if (current.length < target.length) {
+        // 1文字追加
+        displayedTextRef.current = target.slice(0, current.length + 1);
+        setInterimTranscript(`💬 ${displayedTextRef.current}`);
+        
+        // 次の文字を表示（50ms間隔）
+        animationTimerRef.current = setTimeout(animate, 50);
       }
-      webSpeechRef.current = null;
-      webSpeechInterimRef.current = '';
-      webSpeechFinalRef.current = ''; // 蓄積テキストもクリア
-      console.log('[WebSpeech] Stopped');
-    }
+    };
+    
+    animate();
   }, []);
+
+  // バッファ無音タイマーをリセット
+  const resetBufferSilenceTimer = useCallback(() => {
+    if (bufferSilenceTimerRef.current) {
+      clearTimeout(bufferSilenceTimerRef.current);
+    }
+    
+    // アクティブバッファにテキストがある場合のみタイマーを設定
+    const activeBuffer = getActiveBuffer();
+    if (activeBuffer.current.trim()) {
+      bufferSilenceTimerRef.current = setTimeout(() => {
+        swapAndFlushBuffer();
+      }, BUFFER_SILENCE_DURATION);
+    }
+  }, [getActiveBuffer, swapAndFlushBuffer]);
 
   // ゲイン値の変更（録音中でもリアルタイムに反映）
   const setGain = useCallback((value: number) => {
@@ -380,10 +333,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     isProcessingRef.current = true;
     setProcessingStatus('Whisper APIに送信中...');
     
-    // Web Speechの蓄積テキストを保持して表示（解析中も聞いた内容を見せる）
-    const currentWebSpeechText = webSpeechFinalRef.current + webSpeechInterimRef.current;
-    if (currentWebSpeechText) {
-      setInterimTranscript(`☁️ ${currentWebSpeechText}`);
+    // 処理中の表示
+    const activeBuffer = getActiveBuffer();
+    if (activeBuffer.current) {
+      setInterimTranscript(`☁️ ${activeBuffer.current}...`);
     } else {
       setInterimTranscript('☁️ クラウドで解析中...');
     }
@@ -402,24 +355,20 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           setProcessingStatus('ノイズ除去（幻覚フィルタ）');
           setInterimTranscript('🎤 次の音声を待機中...');
         } else {
-          // 認識成功時は即座に会話欄に移動
+          // 認識成功
           console.log('[Whisper] Recognized text:', newText);
           
-          // Web Speechの蓄積テキストをクリア（Whisper結果が確定したので）
-          webSpeechFinalRef.current = '';
-          webSpeechInterimRef.current = '';
-          // アニメーション用の変数もクリア
-          displayedTextRef.current = '';
-          targetTextRef.current = '';
-          if (animationTimerRef.current) {
-            clearTimeout(animationTimerRef.current);
-            animationTimerRef.current = null;
-          }
+          // アクティブバッファに追加
+          appendToActiveBuffer(newText);
           
-          // リアルタイム欄に結果を即座に表示（チェックマーク付きでWhisper結果を表示）
-          setInterimTranscript(`✅ ${newText}`);
+          // タイプライターアニメーション開始
+          const currentActiveBuffer = getActiveBuffer();
+          startTypingAnimation(currentActiveBuffer.current);
           
-          // 会話欄に追加（生のOpenAI出力、整形はApp.tsx側で行う）
+          // バッファ無音タイマーをリセット（0.4秒後にGemini送信）
+          resetBufferSilenceTimer();
+          
+          // 会話欄にも追加（生のWhisper出力）
           setTranscript((prev) => {
             const newTranscript = prev ? prev + '\n' + newText : newText;
             console.log('[Whisper] New transcript:', newTranscript);
@@ -427,22 +376,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           });
           
           setProcessingStatus('認識成功: ' + newText.substring(0, 20) + '...');
-          
-          // 3秒後にリアルタイム欄をクリア（次の音声待機に戻る）
-          // ユーザーが読み切れるように少し長めに保持
-          setTimeout(() => {
-            setInterimTranscript((current) => {
-              // もし既に次の音声が入ってきていたら上書きしない
-              if (current === newText) {
-                return '🎤 次の音声を待機中...';
-              }
-              return current;
-            });
-          }, 3000);
         }
       } else {
         setProcessingStatus('音声なし（無音）');
-        setInterimTranscript('🎤 次の音声を待機中...');
+        // バッファがあれば表示を維持
+        const activeBuffer = getActiveBuffer();
+        if (!activeBuffer.current) {
+          setInterimTranscript('🎤 次の音声を待機中...');
+        }
       }
     } catch (e) {
       console.error('[Whisper] Transcription error:', e);
@@ -455,9 +396,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     } finally {
       isProcessingRef.current = false;
     }
-  }, [silenceThreshold]);
-
-  // 認識成功時に即座に会話欄に移動するので、定期的なflushは不要
+  }, [silenceThreshold, getActiveBuffer, appendToActiveBuffer, startTypingAnimation, resetBufferSilenceTimer]);
 
   const startListening = useCallback(async () => {
     if (!isSupported) {
@@ -468,6 +407,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setError(null);
     setState('starting');
     pendingTextRef.current = '';
+    bufferARef.current = '';
+    bufferBRef.current = '';
+    activeBufferRef.current = 'A';
+    displayedTextRef.current = '';
+    targetTextRef.current = '';
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
     setProcessingStatus('開始中...');
@@ -496,25 +440,36 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         const now = Date.now();
         
         if (isSpeaking) {
-          // 発話中 - リアルタイム表示を更新
+          // 発話中
           if (speechStartTimeRef.current === null) {
             speechStartTimeRef.current = now;
             console.log('[VAD] Speech started');
           }
-          // 発話中の秒数を表示
-          // Web Speechの仮テキストがあればそれを表示、なければステータス表示
-          if (webSpeechInterimRef.current && !isProcessingRef.current) {
-            setInterimTranscript(`💬 ${webSpeechInterimRef.current}`);
-          } else if (!isProcessingRef.current) {
-            const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
-            setInterimTranscript(`🔊 聴いています... (${speechDuration}秒)`);
+          
+          // 発話中の表示（バッファがあればそれを表示）
+          if (!isProcessingRef.current) {
+            const activeBuffer = activeBufferRef.current === 'A' ? bufferARef : bufferBRef;
+            if (activeBuffer.current) {
+              const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
+              setInterimTranscript(`🔊 ${activeBuffer.current} (${speechDuration}秒)`);
+            } else {
+              const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
+              setInterimTranscript(`🔊 聴いています... (${speechDuration}秒)`);
+            }
           }
+          
           silenceStartTimeRef.current = null;
           
           // VADタイムアウトをクリア
           if (vadTimeoutRef.current) {
             clearTimeout(vadTimeoutRef.current);
             vadTimeoutRef.current = null;
+          }
+          
+          // バッファ無音タイマーもクリア（発話中はGemini送信しない）
+          if (bufferSilenceTimerRef.current) {
+            clearTimeout(bufferSilenceTimerRef.current);
+            bufferSilenceTimerRef.current = null;
           }
           
           // 最大発話時間を超えたら強制送信
@@ -525,9 +480,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           }
         } else {
           // 無音
+          const activeBuffer = activeBufferRef.current === 'A' ? bufferARef : bufferBRef;
           if (speechStartTimeRef.current === null && !isProcessingRef.current) {
             // まだ発話が始まっていない
-            setInterimTranscript('🎤 音声を待機中...');
+            if (activeBuffer.current) {
+              setInterimTranscript(`💬 ${activeBuffer.current}`);
+            } else {
+              setInterimTranscript('🎤 音声を待機中...');
+            }
           }
           if (speechStartTimeRef.current !== null) {
             // 発話後の無音
@@ -539,13 +499,16 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             const speechDuration = now - speechStartTimeRef.current;
             
             // 無音中の表示
-            if (silenceDuration > 100) {
-              setInterimTranscript(`⏳ 言葉の区切りを待機中... (${(silenceDuration/1000).toFixed(1)}秒)`);
+            if (silenceDuration > 100 && !isProcessingRef.current) {
+              if (activeBuffer.current) {
+                setInterimTranscript(`⏳ ${activeBuffer.current}...`);
+              } else {
+                setInterimTranscript(`⏳ 言葉の区切りを待機中... (${(silenceDuration/1000).toFixed(1)}秒)`);
+              }
             }
             
-            // 無音が一定時間続いたら送信
+            // 無音が一定時間続いたらWhisperに送信
             if (silenceDuration >= VAD_SILENCE_DURATION && speechDuration >= VAD_MIN_SPEECH_DURATION) {
-              // 既に処理中の場合は送信だけスキップ（returnしない）
               if (!isProcessingRef.current && !vadTimeoutRef.current) {
                 vadTimeoutRef.current = setTimeout(() => {
                   console.log('[VAD] Silence detected after speech, sending audio');
@@ -553,7 +516,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
                   speechStartTimeRef.current = null;
                   silenceStartTimeRef.current = null;
                   vadTimeoutRef.current = null;
-                }, 50); // 少し待ってから送信
+                }, 50);
               }
             }
           }
@@ -564,34 +527,46 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('listening');
       setProcessingStatus('解析中');
 
-      // Web Speech APIを並行で開始（リアルタイム仮テキスト用）
-      startWebSpeech();
-
-      // VADのみで動作（固定間隔なし）
-      // 認識成功時に即座に会話欄に移動するのでflush不要
-
     } catch (e) {
       console.error('[Whisper] Failed to start:', e);
       setError('マイクの使用が許可されていません');
       setState('idle');
       setProcessingStatus('');
     }
-  }, [isSupported, currentGain, processAudio, startWebSpeech]);
+  }, [isSupported, currentGain, processAudio]);
 
   const stopListening = useCallback(async () => {
     setState('stopping');
     setProcessingStatus('停止中...');
 
-    // Web Speech APIを停止
-    stopWebSpeech();
-
-    // VADタイムアウトをクリア
+    // タイマーをクリア
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+    if (bufferSilenceTimerRef.current) {
+      clearTimeout(bufferSilenceTimerRef.current);
+      bufferSilenceTimerRef.current = null;
+    }
     if (vadTimeoutRef.current) {
       clearTimeout(vadTimeoutRef.current);
       vadTimeoutRef.current = null;
     }
+    
+    // 両方のバッファに残りがあればGeminiに送信
+    const remainingText = (bufferARef.current.trim() + ' ' + bufferBRef.current.trim()).trim();
+    if (remainingText && onBufferReadyRef.current) {
+      console.log('[Whisper] Flushing remaining buffers on stop:', remainingText);
+      onBufferReadyRef.current(remainingText);
+    }
+    
     speechStartTimeRef.current = null;
     silenceStartTimeRef.current = null;
+    bufferARef.current = '';
+    bufferBRef.current = '';
+    activeBufferRef.current = 'A';
+    displayedTextRef.current = '';
+    targetTextRef.current = '';
 
     // 最後の音声を処理
     if (recorderRef.current) {
@@ -606,9 +581,17 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         try {
           const result = await transcribeAudio(finalBlob, whisperPromptRef.current);
           if (result.text && result.text.trim() && !isHallucination(result.text.trim())) {
-            pendingTextRef.current = pendingTextRef.current 
-              ? pendingTextRef.current + ' ' + result.text.trim() 
-              : result.text.trim();
+            const finalText = result.text.trim();
+            
+            // 会話欄に追加
+            setTranscript((prev) => {
+              return prev ? prev + '\n' + finalText : finalText;
+            });
+            
+            // Geminiにも送信
+            if (onBufferReadyRef.current) {
+              onBufferReadyRef.current(finalText);
+            }
           }
         } catch (e) {
           console.error('[Whisper] Final transcription error:', e);
@@ -618,8 +601,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       recorderRef.current = null;
     }
 
-    // 認識成功時に即座に会話欄に移動するので、flush不要
-
     setState('idle');
     setInterimTranscript('');
     setIsSpeechDetected(false);
@@ -627,12 +608,17 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setProcessingStatus('');
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
-  }, [silenceThreshold, stopWebSpeech]);
+  }, [silenceThreshold]);
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
     setInterimTranscript('');
     pendingTextRef.current = '';
+    bufferARef.current = '';
+    bufferBRef.current = '';
+    activeBufferRef.current = 'A';
+    displayedTextRef.current = '';
+    targetTextRef.current = '';
   }, []);
 
   // クリーンアップ
@@ -640,6 +626,12 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     return () => {
       if (vadTimeoutRef.current) {
         clearTimeout(vadTimeoutRef.current);
+      }
+      if (animationTimerRef.current) {
+        clearTimeout(animationTimerRef.current);
+      }
+      if (bufferSilenceTimerRef.current) {
+        clearTimeout(bufferSilenceTimerRef.current);
       }
       if (recorderRef.current) {
         recorderRef.current.stop();

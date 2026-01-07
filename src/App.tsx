@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.17.6';
+const APP_VERSION = 'v3.18.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -152,10 +152,19 @@ export default function App() {
   const [genreKeywords, setGenreKeywords] = useState<string>('');
   const detectedNounsRef = useRef<string[]>([]); // 検出済み固有名詞
 
+  // バッファ準備完了時のコールバックをrefで管理（循環参照回避）
+  const bufferReadyCallbackRef = useRef<((text: string) => void) | null>(null);
+  
   // Whisper API
   const whisper = useWhisperRecognition({
     intervalMs: 4000,
-    whisperPrompt: whisperPrompt, // ジャンル・教えるファイル・検出済み固有名詞から構築
+    whisperPrompt: whisperPrompt,
+    onBufferReady: (text: string) => {
+      // ref経由でコールバックを呼び出す
+      if (bufferReadyCallbackRef.current) {
+        bufferReadyCallbackRef.current(text);
+      }
+    },
   });
 
   // Whisperの音声認識状態
@@ -572,7 +581,34 @@ export default function App() {
     }
   }, [fullConversation, knowledgeLevel, currentGenre, combinedMemoryContent]);
 
-  // transcript変更を監視（リアルタイム欄から会話欄に移動したとき）
+  // バッファ準備完了時のコールバックを設定（processText定義後に設定）
+  useEffect(() => {
+    bufferReadyCallbackRef.current = (text: string) => {
+      console.log('[App] Buffer ready for Gemini:', text);
+      if (!text.trim()) return;
+      
+      // フィルタリング
+      if (shouldFilterText(text)) {
+        console.log('[App] Filtered text:', text);
+        return;
+      }
+      
+      // fullConversationを更新
+      setFullConversation(prev => {
+        const updated = prev + ' ' + text;
+        console.log('[App] fullConversation length:', updated.length);
+        updateSummary(updated.trim());
+        updateGenre(updated.trim());
+        return updated;
+      });
+      
+      // Gemini整形と固有名詞検出を実行
+      console.log('[App] Calling processText from buffer:', text);
+      processText(text.trim());
+    };
+  }, [updateSummary, updateGenre, processText]);
+
+  // transcript変更を監視（リアルタイム欄から会話欄に移動したとき）- バッファ方式では不要だが互換性のため残す
   useEffect(() => {
     console.log('[App] transcript changed:', { 
       transcript: transcript?.substring(0, 50), 

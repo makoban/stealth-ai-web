@@ -983,6 +983,43 @@ app.get('/api/stripe/session/:sessionId', checkUserAuth, async (req, res) => {
   }
 });
 
+// ===========================================
+// AssemblyAI リアルタイムトークン取得API
+// ===========================================
+app.get('/api/assemblyai-token', checkUserAuth, async (req, res) => {
+  const ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
+  
+  if (!ASSEMBLYAI_API_KEY) {
+    return res.status(500).json({ error: 'AssemblyAI API key not configured' });
+  }
+  
+  try {
+    // AssemblyAIの一時トークンを取得
+    const response = await fetch('https://api.assemblyai.com/v2/realtime/token', {
+      method: 'POST',
+      headers: {
+        'Authorization': ASSEMBLYAI_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        expires_in: 3600, // 1時間有効
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[AssemblyAI] Token error:', errorText);
+      return res.status(response.status).json({ error: 'Failed to get token' });
+    }
+    
+    const data = await response.json();
+    res.json({ token: data.token });
+  } catch (error) {
+    console.error('[AssemblyAI] Token request error:', error.message);
+    res.status(500).json({ error: 'Token request failed' });
+  }
+});
+
 // SPAのフォールバック
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
