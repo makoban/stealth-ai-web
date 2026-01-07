@@ -205,14 +205,39 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           body: JSON.stringify({ type: 'webspeech_onresult', resultsLength: event.results.length })
         }).catch(() => {});
         
+        // デバッグ: ループ前の情報を送信
+        fetch('/api/debug-log', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            type: 'webspeech_loop_start', 
+            resultIndex: event.resultIndex,
+            resultsLength: event.results.length 
+          })
+        }).catch(() => {});
+        
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
+          const transcript = result[0]?.transcript || '';
+          
+          // デバッグ: 各結果の詳細を送信
+          fetch('/api/debug-log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              type: 'webspeech_result_item', 
+              index: i,
+              isFinal: result.isFinal,
+              transcript: transcript
+            })
+          }).catch(() => {});
+          
           if (result.isFinal) {
             // 確定したテキストを蓄積
-            finalText += result[0].transcript;
+            finalText += transcript;
           } else {
             // 仮テキスト
-            interim += result[0].transcript;
+            interim += transcript;
           }
         }
         
