@@ -144,10 +144,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const speechStartTimeRef = useRef<number | null>(null); // 発話開始時刻
   const silenceStartTimeRef = useRef<number | null>(null); // 無音開始時刻
   const vadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // VADタイムアウト
-  const VAD_SILENCE_DURATION = 500; // 無音と判定する時間（0.5秒）
+  const VAD_SILENCE_DURATION = 400; // 無音と判定する時間（0.4秒）
   const VAD_MIN_SPEECH_DURATION = 300; // 最低発話時間（0.3秒）
-  const VAD_MAX_SPEECH_DURATION = 30000; // 最大発話時間（30秒）- これを超えたら強制送信
-  const VAD_SPEECH_THRESHOLD = 0.02; // 発話と判定する閾値（より敏感に）
+  const VAD_MAX_SPEECH_DURATION = 15000; // 最大発話時間（15秒）- 長すぎるので短縮
+  const VAD_SPEECH_THRESHOLD = 0.015; // 発話と判定する閾値をさらに下げて敏感に（1.5%）
 
   // プロンプトをrefで保持（再レンダリングを防ぐ）
   useEffect(() => {
@@ -219,7 +219,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setProcessingStatus('Whisper APIに送信中...');
     
     // 処理中は認識中を表示
-    setInterimTranscript('📝 認識中...');
+    setInterimTranscript('☁️ クラウドで解析中...');
 
     try {
       console.log('[Whisper] Sending to API with prompt...');
@@ -233,9 +233,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         if (isHallucination(newText)) {
           console.log('[Whisper] Filtered hallucination:', newText);
           setProcessingStatus('ノイズ除去（幻覚フィルタ）');
+          setInterimTranscript('🎤 次の音声を待機中...');
         } else {
           // 認識成功時は即座に会話欄に移動
           console.log('[Whisper] Recognized text:', newText);
+          
+          // リアルタイム欄に結果を即座に表示（チェックマークなしで生のテキストを表示）
+          setInterimTranscript(newText);
           
           // 会話欄に追加（生のOpenAI出力、整形はApp.tsx側で行う）
           setTranscript((prev) => {
@@ -244,19 +248,23 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             return newTranscript;
           });
           
-          // リアルタイム欄に結果を表示（✓付き）
-          setInterimTranscript(`✅ ${newText}`);
           setProcessingStatus('認識成功: ' + newText.substring(0, 20) + '...');
           
-          // 1.5秒後にリアルタイム欄をクリア（次の音声待機に戻る）
+          // 3秒後にリアルタイム欄をクリア（次の音声待機に戻る）
+          // ユーザーが読み切れるように少し長めに保持
           setTimeout(() => {
-            if (!isProcessingRef.current) {
-              setInterimTranscript('🎤 音声を待機中...');
-            }
-          }, 1500);
+            setInterimTranscript((current) => {
+              // もし既に次の音声が入ってきていたら上書きしない
+              if (current === newText) {
+                return '🎤 次の音声を待機中...';
+              }
+              return current;
+            });
+          }, 3000);
         }
       } else {
         setProcessingStatus('音声なし（無音）');
+        setInterimTranscript('🎤 次の音声を待機中...');
       }
     } catch (e) {
       console.error('[Whisper] Transcription error:', e);
@@ -317,7 +325,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           }
           // 発話中の秒数を表示
           const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
-          setInterimTranscript(`🔊 聴いています... (${speechDuration}秒)`);
+          // リアルタイム感を出すため、認識中であることを強調
+          setInterimTranscript(`🔊 音声をキャッチ中... (${speechDuration}秒)`);
           silenceStartTimeRef.current = null;
           
           // VADタイムアウトをクリア
@@ -347,16 +356,22 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             const silenceDuration = now - silenceStartTimeRef.current;
             const speechDuration = now - speechStartTimeRef.current;
             
+            // 無音中の表示
+            if (silenceDuration > 100) {
+              setInterimTranscript(`⏳ 言葉の区切りを待機中... (${(silenceDuration/1000).toFixed(1)}秒)`);
+            }
+            
             // 無音が一定時間続いたら送信
             if (silenceDuration >= VAD_SILENCE_DURATION && speechDuration >= VAD_MIN_SPEECH_DURATION) {
-              if (!vadTimeoutRef.current) {
+              // 既に処理中の場合は送信だけスキップ（returnしない）
+              if (!isProcessingRef.current && !vadTimeoutRef.current) {
                 vadTimeoutRef.current = setTimeout(() => {
                   console.log('[VAD] Silence detected after speech, sending audio');
                   processAudio();
                   speechStartTimeRef.current = null;
                   silenceStartTimeRef.current = null;
                   vadTimeoutRef.current = null;
-                }, 100); // 少し待ってから送信
+                }, 50); // 少し待ってから送信
               }
             }
           }
