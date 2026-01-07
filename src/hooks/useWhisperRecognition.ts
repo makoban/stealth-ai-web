@@ -140,6 +140,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const webSpeechRef = useRef<any>(null);
   const webSpeechInterimRef = useRef<string>(''); // Web Speechの仮テキスト
+  const webSpeechFinalRef = useRef<string>(''); // Web Speechの確定テキスト（蓄積）
   
   const whisperPromptRef = useRef<string>(whisperPrompt);
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
@@ -187,18 +188,31 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
       recognition.onresult = (event: any) => {
         let interim = '';
+        let finalText = '';
+        
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          if (!result.isFinal) {
+          if (result.isFinal) {
+            // 確定したテキストを蓄積
+            finalText += result[0].transcript;
+          } else {
+            // 仮テキスト
             interim += result[0].transcript;
           }
         }
-        if (interim) {
-          webSpeechInterimRef.current = interim;
-          // Whisperが処理中でなければ、仮テキストを表示
-          if (!isProcessingRef.current) {
-            setInterimTranscript(`💬 ${interim}`);
-          }
+        
+        // 確定テキストがあれば蓄積
+        if (finalText) {
+          webSpeechFinalRef.current += finalText;
+        }
+        
+        // 仮テキストを更新
+        webSpeechInterimRef.current = interim;
+        
+        // 蓄積した確定テキスト + 現在の仮テキストを表示
+        const displayText = webSpeechFinalRef.current + interim;
+        if (displayText && !isProcessingRef.current) {
+          setInterimTranscript(`💬 ${displayText}`);
         }
       };
 
@@ -252,6 +266,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       }
       webSpeechRef.current = null;
       webSpeechInterimRef.current = '';
+      webSpeechFinalRef.current = ''; // 蓄積テキストもクリア
       console.log('[WebSpeech] Stopped');
     }
   }, []);
@@ -309,8 +324,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     isProcessingRef.current = true;
     setProcessingStatus('Whisper APIに送信中...');
     
-    // 処理中は認識中を表示
-    setInterimTranscript('☁️ クラウドで解析中...');
+    // Web Speechの蓄積テキストを保持して表示（解析中も聞いた内容を見せる）
+    const currentWebSpeechText = webSpeechFinalRef.current + webSpeechInterimRef.current;
+    if (currentWebSpeechText) {
+      setInterimTranscript(`☁️ ${currentWebSpeechText}`);
+    } else {
+      setInterimTranscript('☁️ クラウドで解析中...');
+    }
 
     try {
       console.log('[Whisper] Sending to API with prompt...');
@@ -329,8 +349,12 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           // 認識成功時は即座に会話欄に移動
           console.log('[Whisper] Recognized text:', newText);
           
-          // リアルタイム欄に結果を即座に表示（チェックマークなしで生のテキストを表示）
-          setInterimTranscript(newText);
+          // Web Speechの蓄積テキストをクリア（Whisper結果が確定したので）
+          webSpeechFinalRef.current = '';
+          webSpeechInterimRef.current = '';
+          
+          // リアルタイム欄に結果を即座に表示（チェックマーク付きでWhisper結果を表示）
+          setInterimTranscript(`✅ ${newText}`);
           
           // 会話欄に追加（生のOpenAI出力、整形はApp.tsx側で行う）
           setTranscript((prev) => {
