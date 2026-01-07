@@ -237,33 +237,31 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
       recognition.onerror = (event: any) => {
         console.log('[WebSpeech] Error:', event.error);
-        // エラー時は再起動を試みる
-        if (event.error === 'no-speech' || event.error === 'aborted') {
+        // エラー時は再起動を試みる（全てのエラーで再起動）
+        if (recorderRef.current?.isRecording()) {
           setTimeout(() => {
-            if (webSpeechRef.current) {
-              try {
-                webSpeechRef.current.start();
-              } catch (e) {
-                // 既に開始している場合は無視
-              }
+            try {
+              recognition.start();
+              console.log('[WebSpeech] Restarted after error');
+            } catch (e) {
+              console.log('[WebSpeech] Restart failed:', e);
             }
-          }, 100);
+          }, 200);
         }
       };
 
       recognition.onend = () => {
-        console.log('[WebSpeech] Ended, restarting...');
-        // 録音中なら再起動
+        console.log('[WebSpeech] Ended');
+        // 録音中なら必ず再起動
         if (recorderRef.current?.isRecording()) {
           setTimeout(() => {
-            if (webSpeechRef.current) {
-              try {
-                webSpeechRef.current.start();
-              } catch (e) {
-                // 既に開始している場合は無視
-              }
+            try {
+              recognition.start();
+              console.log('[WebSpeech] Restarted after end');
+            } catch (e) {
+              console.log('[WebSpeech] Restart failed:', e);
             }
-          }, 100);
+          }, 200);
         }
       };
 
