@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.16.6';
+const APP_VERSION = 'v3.17.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -165,6 +165,7 @@ export default function App() {
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
   const isSpeechDetected = whisper.isSpeechDetected;
+  const listenStatus = whisper.listenStatus; // アイコン表示用のステータス
   const isSupported = true;
   const speechError = whisper.error;
 
@@ -696,6 +697,25 @@ export default function App() {
             className="connection-indicator"
             style={{ backgroundColor: getConnectionColor() }}
           />
+          {/* リスニングステータスアイコン */}
+          {isListening && (
+            <span 
+              className={`listen-status-icon ${listenStatus}`}
+              title={{
+                idle: '停止中',
+                waiting: '音声を待機中',
+                listening: '聴いています',
+                processing: '解析中',
+              }[listenStatus]}
+            >
+              {{
+                idle: '⏸️',
+                waiting: '🎤',
+                listening: '🔊',
+                processing: '☁️',
+              }[listenStatus]}
+            </span>
+          )}
           {/* テーマ切り替えアイコン（タップで順次切り替え） */}
           <button
             className="icon-btn theme-icon-btn"
@@ -775,11 +795,10 @@ export default function App() {
           />
         </div>
 
-        {/* リアルタイム欄（OpenAI出力をそのまま表示） */}
+        {/* リアルタイム欄（話されている文字のみを表示） */}
         <section className="section realtime-section">
           <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
-
-            {interimTranscript || (isListening ? '音声を待機中...' : '会話解析を開始してください')}
+            {interimTranscript || (isListening ? '' : '会話解析を開始してください')}
           </div>
         </section>
 

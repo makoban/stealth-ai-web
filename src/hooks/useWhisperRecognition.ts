@@ -131,6 +131,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [isClipping, setIsClipping] = useState<boolean>(false);
   const [currentGain, setCurrentGain] = useState<number>(50); // 初期値は最大
   const [processingStatus, setProcessingStatus] = useState<string>('');
+  // リスニング状態（アイコン表示用）: 'idle' | 'waiting' | 'listening' | 'processing'
+  const [listenStatus, setListenStatus] = useState<'idle' | 'waiting' | 'listening' | 'processing'>('idle');
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const isProcessingRef = useRef<boolean>(false);
@@ -226,11 +228,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         }
         
         if (newTargetText && !isProcessingRef.current) {
-          // 目標テキストが変わったら即座に表示（アニメーションなしでスムーズに）
+          // 目標テキストが変わったら即座に表示（純粋なテキストのみ、絵文字なし）
           if (newTargetText !== targetTextRef.current) {
             targetTextRef.current = newTargetText;
             displayedTextRef.current = newTargetText;
-            setInterimTranscript(`💬 ${newTargetText}`);
+            setInterimTranscript(newTargetText);
           }
         }
       };
@@ -351,11 +353,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     
     // Web Speechの蓄積テキストを保持して表示（解析中も聞いた内容を見せる）
     const currentWebSpeechText = webSpeechFinalRef.current + webSpeechInterimRef.current;
-    if (currentWebSpeechText) {
-      setInterimTranscript(`☁️ ${currentWebSpeechText}`);
-    } else {
-      setInterimTranscript('☁️ クラウドで解析中...');
-    }
+    // ステータスを「解析中」に設定（アイコン表示用）
+    setListenStatus('processing');
+    // Web Speechのテキストがあればそのまま表示を維持（リアルタイム欄は変更しない）
 
     try {
       console.log('[Whisper] Sending to API with prompt...');
@@ -369,7 +369,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         if (isHallucination(newText)) {
           console.log('[Whisper] Filtered hallucination:', newText);
           setProcessingStatus('ノイズ除去（幻覚フィルタ）');
-          setInterimTranscript('🎤 次の音声を待機中...');
+          setListenStatus('waiting');
         } else {
           // 認識成功時は即座に会話欄に移動
           console.log('[Whisper] Recognized text:', newText);
@@ -385,9 +385,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             animationTimerRef.current = null;
           }
           
-          // リアルタイム欄に結果を即座に表示（チェックマーク付きでWhisper結果を表示）
-          setInterimTranscript(`✅ ${newText}`);
-          
           // 会話欄に追加（生のOpenAI出力、整形はApp.tsx側で行う）
           setTranscript((prev) => {
             const newTranscript = prev ? prev + '\n' + newText : newText;
@@ -396,22 +393,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           });
           
           setProcessingStatus('認識成功: ' + newText.substring(0, 20) + '...');
-          
-          // 3秒後にリアルタイム欄をクリア（次の音声待機に戻る）
-          // ユーザーが読み切れるように少し長めに保持
-          setTimeout(() => {
-            setInterimTranscript((current) => {
-              // もし既に次の音声が入ってきていたら上書きしない
-              if (current === newText) {
-                return '🎤 次の音声を待機中...';
-              }
-              return current;
-            });
-          }, 3000);
+          setListenStatus('waiting');
         }
       } else {
         setProcessingStatus('音声なし（無音）');
-        setInterimTranscript('🎤 次の音声を待機中...');
+        setListenStatus('waiting');
       }
     } catch (e) {
       console.error('[Whisper] Transcription error:', e);
@@ -440,6 +426,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
     setProcessingStatus('開始中...');
+    setListenStatus('waiting');
+    setInterimTranscript(''); // リアルタイム欄をクリア
 
     try {
       const recorder = new AudioRecorder();
@@ -465,17 +453,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         const now = Date.now();
         
         if (isSpeaking) {
-          // 発話中 - リアルタイム表示を更新
+          // 発話中
           if (speechStartTimeRef.current === null) {
             speechStartTimeRef.current = now;
             console.log('[VAD] Speech started');
           }
-          // Web Speechのテキストがある場合は上書きしない（アニメーション表示を優先）
-          // targetTextRefに値がある場合はWeb Speechがアクティブなのでステータス表示をスキップ
-          if (!targetTextRef.current && !isProcessingRef.current) {
-            const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
-            setInterimTranscript(`🔊 聴いています... (${speechDuration}秒)`);
-          }
+          // ステータスを「聴いています」に設定（アイコン表示用）
+          setListenStatus('listening');
           silenceStartTimeRef.current = null;
           
           // VADタイムアウトをクリア
@@ -494,10 +478,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           // 無音
           if (speechStartTimeRef.current === null && !isProcessingRef.current) {
             // まだ発話が始まっていない
-            // Web Speechのテキストがある場合は上書きしない
-            if (!targetTextRef.current) {
-              setInterimTranscript('🎤 音声を待機中...');
-            }
+            setListenStatus('waiting');
           }
           if (speechStartTimeRef.current !== null) {
             // 発話後の無音
@@ -507,11 +488,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             
             const silenceDuration = now - silenceStartTimeRef.current;
             const speechDuration = now - speechStartTimeRef.current;
-            
-            // 無音中の表示
-            if (silenceDuration > 100) {
-              setInterimTranscript(`⏳ 言葉の区切りを待機中... (${(silenceDuration/1000).toFixed(1)}秒)`);
-            }
             
             // 無音が一定時間続いたら送信
             if (silenceDuration >= VAD_SILENCE_DURATION && speechDuration >= VAD_MIN_SPEECH_DURATION) {
@@ -595,6 +571,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setIsSpeechDetected(false);
     setAudioLevel(0);
     setProcessingStatus('');
+    setListenStatus('idle');
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
   }, [silenceThreshold, stopWebSpeech]);
@@ -629,6 +606,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     audioLevel,
     currentGain,
     processingStatus,
+    listenStatus, // アイコン表示用のステータス
     setGain,
     startListening,
     stopListening,
