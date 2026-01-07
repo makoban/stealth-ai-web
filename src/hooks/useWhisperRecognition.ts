@@ -194,17 +194,76 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       recognition.interimResults = true; // 仮結果を取得
 
       recognition.onresult = (event: any) => {
-        // シンプルに、今聞こえたテキストをそのまま表示
-        let currentText = '';
+        let interim = '';
+        let finalText = '';
         
-        for (let i = 0; i < event.results.length; i++) {
-          currentText += event.results[i][0].transcript;
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            // 確定したテキストを蓄積
+            finalText += result[0].transcript;
+          } else {
+            // 仮テキスト
+            interim += result[0].transcript;
+          }
         }
         
-        // 聞こえたテキストをそのまま表示（何も加工しない）
-        if (currentText && !isProcessingRef.current) {
-          setInterimTranscript(currentText);
+        // 確定テキストがあれば蓄積
+        if (finalText) {
+          webSpeechFinalRef.current += finalText;
         }
+        
+        // 仮テキストを更新
+        webSpeechInterimRef.current = interim;
+        
+        // 蓄積した確定テキスト + 現在の仮テキスト
+        const fullText = webSpeechFinalRef.current + interim;
+        
+        // 20文字を超えたら、最新の20文字のみを表示対象にする
+        const MAX_DISPLAY_LENGTH = 20;
+        let newTargetText = fullText;
+        if (fullText.length > MAX_DISPLAY_LENGTH) {
+          // 最新の20文字を取得
+          newTargetText = fullText.slice(-MAX_DISPLAY_LENGTH);
+          // 表示中のテキストもリセット（古い部分を削除）
+          displayedTextRef.current = '';
+        }
+        
+        if (newTargetText && !isProcessingRef.current) {
+          // 目標テキストが変わったらアニメーション開始
+          if (newTargetText !== targetTextRef.current) {
+            targetTextRef.current = newTargetText;
+            startTypingAnimation();
+          }
+        }
+      };
+      
+      // 1文字ずつアニメーション表示
+      const startTypingAnimation = () => {
+        // 既存のアニメーションをキャンセル
+        if (animationTimerRef.current) {
+          clearTimeout(animationTimerRef.current);
+        }
+        
+        const animate = () => {
+          const target = targetTextRef.current;
+          const current = displayedTextRef.current;
+          
+          if (current.length < target.length) {
+            // 1文字追加
+            displayedTextRef.current = target.slice(0, current.length + 1);
+            setInterimTranscript(displayedTextRef.current);
+            
+            // 次の文字を表示（40ms間隔で高速に）
+            animationTimerRef.current = setTimeout(animate, 40);
+          } else if (current.length > target.length) {
+            // ターゲットが短くなった場合は即座に更新
+            displayedTextRef.current = target;
+            setInterimTranscript(target);
+          }
+        };
+        
+        animate();
       };
 
       recognition.onerror = (event: any) => {

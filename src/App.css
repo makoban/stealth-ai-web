@@ -182,21 +182,25 @@
   padding: 12px;
 }
 
-/* リアルタイム欄 - 比率1 */
+/* リアルタイム欄 - 1行固定 */
 .realtime-section {
-  flex: 1;
-  min-height: 60px;
+  flex: 0 0 auto;
   background: var(--surface-elevated);
+  padding: 4px 8px;
 }
 
 .realtime-text {
   font-size: var(--font-size-large);
   color: var(--text-secondary);
-  padding: 8px;
+  padding: 6px 10px;
   background: white;
   border-radius: 8px;
-  min-height: 40px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: all 0.3s;
+  min-height: 32px;
+  line-height: 32px;
 }
 
 .realtime-text.active {
@@ -205,10 +209,10 @@
   box-shadow: 0 0 10px rgba(50, 205, 50, 0.3);
 }
 
-/* 会話欄 - 比率1 */
+/* 会話欄 - 拡大（比率2） */
 .conversation-section {
-  flex: 1;
-  min-height: 60px;
+  flex: 2;
+  min-height: 80px;
 }
 
 .conversation-entry {
