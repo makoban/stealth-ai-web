@@ -351,11 +351,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     isProcessingRef.current = true;
     setProcessingStatus('Whisper APIに送信中...');
     
-    // Web Speechの蓄積テキストを保持して表示（解析中も聞いた内容を見せる）
-    const currentWebSpeechText = webSpeechFinalRef.current + webSpeechInterimRef.current;
     // ステータスを「解析中」に設定（アイコン表示用）
+    // Web Speechのテキストはそのまま表示を維持（リアルタイム欄は変更しない）
     setListenStatus('processing');
-    // Web Speechのテキストがあればそのまま表示を維持（リアルタイム欄は変更しない）
 
     try {
       console.log('[Whisper] Sending to API with prompt...');
