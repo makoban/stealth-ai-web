@@ -194,6 +194,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       recognition.interimResults = true; // 仮結果を取得
 
       recognition.onresult = (event: any) => {
+        console.log('[WebSpeech] onresult fired, results:', event.results.length);
         let interim = '';
         let finalText = '';
         
@@ -232,9 +233,12 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         if (newTargetText && !isProcessingRef.current) {
           // 目標テキストが変わったらアニメーション開始
           if (newTargetText !== targetTextRef.current) {
+            console.log('[WebSpeech] New target text:', newTargetText);
             targetTextRef.current = newTargetText;
             startTypingAnimation();
           }
+        } else {
+          console.log('[WebSpeech] Skipped - isProcessing:', isProcessingRef.current, 'text:', newTargetText);
         }
       };
       
@@ -294,6 +298,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             }
           }, 200);
         }
+      };
+
+      recognition.onstart = () => {
+        console.log('[WebSpeech] Recognition started successfully');
       };
 
       recognition.start();

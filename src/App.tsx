@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.17.2';
+const APP_VERSION = 'v3.17.3';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -817,13 +817,7 @@ export default function App() {
                   <div key={entry.id} className="conversation-entry animate-fadeIn">
                     <span className="entry-text">
                       {entry.text}
-                      {entry.uncertainWords && entry.uncertainWords.length > 0 && (
-                        <span className="uncertain"> ({entry.uncertainWords.join(', ')}?)</span>
-                      )}
                     </span>
-                    {entry.originalText && (
-                      <span className="original-text">✅修正: {entry.originalText}</span>
-                    )}
                   </div>
                 ))
               )}
@@ -844,55 +838,7 @@ export default function App() {
               ) : (
                 [...summaryHistory].reverse().map((entry, index) => (
                   <div key={index} className="summary-entry animate-fadeIn">
-                    {/* 明瞭度バー */}
-                    {entry.clarity !== undefined && (
-                      <div className="clarity-bar">
-                        <span className="clarity-label">明瞭度:</span>
-                        <div className="clarity-track">
-                          <div 
-                            className="clarity-fill" 
-                            style={{ 
-                              width: `${entry.clarity * 100}%`,
-                              backgroundColor: entry.clarity > 0.7 ? '#4CAF50' : entry.clarity > 0.4 ? '#FF9800' : '#f44336'
-                            }} 
-                          />
-                        </div>
-                        <span className="clarity-value">{Math.round(entry.clarity * 100)}%</span>
-                      </div>
-                    )}
-                    {/* 詳細トピック */}
-                    {entry.detailedTopic && (
-                      <div className="detailed-topic">
-                        <span className="detailed-topic-icon">🎯</span>
-                        <span className="detailed-topic-text">{entry.detailedTopic}</span>
-                      </div>
-                    )}
                     <p className="summary-text">{entry.summary}</p>
-                    {entry.topics.length > 0 && (
-                      <div className="topics">
-                        {entry.topics.map((topic, i) => (
-                          <span key={i} className="topic-tag">{topic}</span>
-                        ))}
-                      </div>
-                    )}
-                    {(entry.context || entry.participants || entry.purpose) && (
-                      <div className="summary-prediction">
-                        {entry.context && <span className="prediction-item">🎬 {entry.context}</span>}
-                        {entry.participants && <span className="prediction-item">👥 {entry.participants}</span>}
-                        {entry.purpose && <span className="prediction-item">🎯 {entry.purpose}</span>}
-                      </div>
-                    )}
-                    {/* 予測単語 */}
-                    {entry.predictedWords && entry.predictedWords.length > 0 && (
-                      <div className="predicted-words">
-                        <span className="predicted-words-label">🔮 次に出そうな単語:</span>
-                        <div className="predicted-words-list">
-                          {entry.predictedWords.map((word, i) => (
-                            <span key={i} className="predicted-word-tag">{word}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ))
               )}
