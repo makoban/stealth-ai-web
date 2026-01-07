@@ -137,7 +137,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const pendingTextRef = useRef<string>('');
   
   // Web Speech API用（リアルタイム仮テキスト表示用）
-  const webSpeechRef = useRef<SpeechRecognition | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const webSpeechRef = useRef<any>(null);
   const webSpeechInterimRef = useRef<string>(''); // Web Speechの仮テキスト
   
   const whisperPromptRef = useRef<string>(whisperPrompt);
