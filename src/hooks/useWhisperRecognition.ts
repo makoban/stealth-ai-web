@@ -142,6 +142,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const webSpeechInterimRef = useRef<string>(''); // Web Speechの仮テキスト
   const webSpeechFinalRef = useRef<string>(''); // Web Speechの確定テキスト（蓄積）
   
+  // アニメーション表示用
+  const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const displayedTextRef = useRef<string>(''); // 現在表示中のテキスト
+  const targetTextRef = useRef<string>(''); // 目標テキスト
+  
   const whisperPromptRef = useRef<string>(whisperPrompt);
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
   const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
@@ -209,11 +214,43 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         // 仮テキストを更新
         webSpeechInterimRef.current = interim;
         
-        // 蓄積した確定テキスト + 現在の仮テキストを表示
-        const displayText = webSpeechFinalRef.current + interim;
-        if (displayText && !isProcessingRef.current) {
-          setInterimTranscript(`💬 ${displayText}`);
+        // 蓄積した確定テキスト + 現在の仮テキストをアニメーション表示
+        const newTargetText = webSpeechFinalRef.current + interim;
+        if (newTargetText && !isProcessingRef.current) {
+          // 目標テキストが変わったらアニメーション開始
+          if (newTargetText !== targetTextRef.current) {
+            targetTextRef.current = newTargetText;
+            startTypingAnimation();
+          }
         }
+      };
+      
+      // 1文字ずつアニメーション表示
+      const startTypingAnimation = () => {
+        // 既存のアニメーションをキャンセル
+        if (animationTimerRef.current) {
+          clearTimeout(animationTimerRef.current);
+        }
+        
+        const animate = () => {
+          const target = targetTextRef.current;
+          const current = displayedTextRef.current;
+          
+          if (current.length < target.length) {
+            // 1文字追加
+            displayedTextRef.current = target.slice(0, current.length + 1);
+            setInterimTranscript(`💬 ${displayedTextRef.current}`);
+            
+            // 次の文字を表示（40ms間隔で高速に）
+            animationTimerRef.current = setTimeout(animate, 40);
+          } else if (current.length > target.length) {
+            // ターゲットが短くなった場合は即座に更新
+            displayedTextRef.current = target;
+            setInterimTranscript(`💬 ${target}`);
+          }
+        };
+        
+        animate();
       };
 
       recognition.onerror = (event: any) => {
@@ -258,6 +295,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
   // Web Speech APIの停止
   const stopWebSpeech = useCallback(() => {
+    // アニメーションタイマーをクリア
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+    displayedTextRef.current = '';
+    targetTextRef.current = '';
+    
     if (webSpeechRef.current) {
       try {
         webSpeechRef.current.stop();
@@ -352,6 +397,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           // Web Speechの蓄積テキストをクリア（Whisper結果が確定したので）
           webSpeechFinalRef.current = '';
           webSpeechInterimRef.current = '';
+          // アニメーション用の変数もクリア
+          displayedTextRef.current = '';
+          targetTextRef.current = '';
+          if (animationTimerRef.current) {
+            clearTimeout(animationTimerRef.current);
+            animationTimerRef.current = null;
+          }
           
           // リアルタイム欄に結果を即座に表示（チェックマーク付きでWhisper結果を表示）
           setInterimTranscript(`✅ ${newText}`);
