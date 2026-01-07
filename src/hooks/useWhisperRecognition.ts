@@ -139,7 +139,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setInterimTranscript(`💬 ${displayTextRef.current}`);
   }, []);
 
-  // Gemini送信
+  // Gemini送信（リアルタイム表示はクリアしない）
   const flushGeminiBuffer = useCallback(() => {
     const buffer = geminiBufferRef.current.trim();
     log('GEMINI', `flushGeminiBuffer - buffer: "${buffer.slice(0, 50)}..."`);
@@ -148,11 +148,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       log('GEMINI', 'Sending to Gemini');
       onBufferReadyRef.current(buffer);
       geminiBufferRef.current = '';
-      
-      // リアルタイム表示もクリア（次の発話用）
-      displayTextRef.current = '';
-      setInterimTranscript('🎤 次の音声を待機中...');
-      log('GEMINI', 'Display cleared');
+      // リアルタイム表示はクリアしない（途切れずに流れ続ける）
+      log('GEMINI', 'Sent, display continues');
     }
   }, []);
 
