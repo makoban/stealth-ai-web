@@ -131,8 +131,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [isClipping, setIsClipping] = useState<boolean>(false);
   const [currentGain, setCurrentGain] = useState<number>(50); // 初期値は最大
   const [processingStatus, setProcessingStatus] = useState<string>('');
-  // リスニング状態（アイコン表示用）: 'idle' | 'waiting' | 'listening' | 'processing'
-  const [listenStatus, setListenStatus] = useState<'idle' | 'waiting' | 'listening' | 'processing'>('idle');
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const isProcessingRef = useRef<boolean>(false);
@@ -194,50 +192,17 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       recognition.interimResults = true; // 仮結果を取得
 
       recognition.onresult = (event: any) => {
-        console.log('[WebSpeech] onresult fired, results:', event.results.length);
         let interim = '';
         let finalText = '';
         
-        // デバッグ: サーバーにログを送信
-        fetch('/api/debug-log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'webspeech_onresult', resultsLength: event.results.length })
-        }).catch(() => {});
-        
-        // デバッグ: ループ前の情報を送信
-        fetch('/api/debug-log', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            type: 'webspeech_loop_start', 
-            resultIndex: event.resultIndex,
-            resultsLength: event.results.length 
-          })
-        }).catch(() => {});
-        
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          const transcript = result[0]?.transcript || '';
-          
-          // デバッグ: 各結果の詳細を送信
-          fetch('/api/debug-log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              type: 'webspeech_result_item', 
-              index: i,
-              isFinal: result.isFinal,
-              transcript: transcript
-            })
-          }).catch(() => {});
-          
           if (result.isFinal) {
             // 確定したテキストを蓄積
-            finalText += transcript;
+            finalText += result[0].transcript;
           } else {
             // 仮テキスト
-            interim += transcript;
+            interim += result[0].transcript;
           }
         }
         
@@ -252,15 +217,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         // 蓄積した確定テキスト + 現在の仮テキスト
         const fullText = webSpeechFinalRef.current + interim;
         
-        // デバッグ: 認識結果をサーバーに送信
-        if (fullText) {
-          fetch('/api/debug-log', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'webspeech_text', text: fullText, interim, finalText })
-          }).catch(() => {});
-        }
-        
         // 20文字を超えたら、最新の20文字のみを表示対象にする
         const MAX_DISPLAY_LENGTH = 20;
         let newTargetText = fullText;
@@ -274,12 +230,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         if (newTargetText && !isProcessingRef.current) {
           // 目標テキストが変わったらアニメーション開始
           if (newTargetText !== targetTextRef.current) {
-            console.log('[WebSpeech] New target text:', newTargetText);
             targetTextRef.current = newTargetText;
             startTypingAnimation();
           }
-        } else {
-          console.log('[WebSpeech] Skipped - isProcessing:', isProcessingRef.current, 'text:', newTargetText);
         }
       };
       
@@ -297,14 +250,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           if (current.length < target.length) {
             // 1文字追加
             displayedTextRef.current = target.slice(0, current.length + 1);
-            setInterimTranscript(displayedTextRef.current);
+            setInterimTranscript(`💬 ${displayedTextRef.current}`);
             
             // 次の文字を表示（40ms間隔で高速に）
             animationTimerRef.current = setTimeout(animate, 40);
           } else if (current.length > target.length) {
             // ターゲットが短くなった場合は即座に更新
             displayedTextRef.current = target;
-            setInterimTranscript(target);
+            setInterimTranscript(`💬 ${target}`);
           }
         };
         
@@ -313,36 +266,34 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
       recognition.onerror = (event: any) => {
         console.log('[WebSpeech] Error:', event.error);
-        // エラー時は再起動を試みる（全てのエラーで再起動）
-        if (recorderRef.current?.isRecording()) {
+        // エラー時は再起動を試みる
+        if (event.error === 'no-speech' || event.error === 'aborted') {
           setTimeout(() => {
-            try {
-              recognition.start();
-              console.log('[WebSpeech] Restarted after error');
-            } catch (e) {
-              console.log('[WebSpeech] Restart failed:', e);
+            if (webSpeechRef.current) {
+              try {
+                webSpeechRef.current.start();
+              } catch (e) {
+                // 既に開始している場合は無視
+              }
             }
-          }, 200);
+          }, 100);
         }
       };
 
       recognition.onend = () => {
-        console.log('[WebSpeech] Ended');
-        // 録音中なら必ず再起動
+        console.log('[WebSpeech] Ended, restarting...');
+        // 録音中なら再起動
         if (recorderRef.current?.isRecording()) {
           setTimeout(() => {
-            try {
-              recognition.start();
-              console.log('[WebSpeech] Restarted after end');
-            } catch (e) {
-              console.log('[WebSpeech] Restart failed:', e);
+            if (webSpeechRef.current) {
+              try {
+                webSpeechRef.current.start();
+              } catch (e) {
+                // 既に開始している場合は無視
+              }
             }
-          }, 200);
+          }, 100);
         }
-      };
-
-      recognition.onstart = () => {
-        console.log('[WebSpeech] Recognition started successfully');
       };
 
       recognition.start();
@@ -429,9 +380,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     isProcessingRef.current = true;
     setProcessingStatus('Whisper APIに送信中...');
     
-    // ステータスを「解析中」に設定（アイコン表示用）
-    // Web Speechのテキストはそのまま表示を維持（リアルタイム欄は変更しない）
-    setListenStatus('processing');
+    // Web Speechの蓄積テキストを保持して表示（解析中も聞いた内容を見せる）
+    const currentWebSpeechText = webSpeechFinalRef.current + webSpeechInterimRef.current;
+    if (currentWebSpeechText) {
+      setInterimTranscript(`☁️ ${currentWebSpeechText}`);
+    } else {
+      setInterimTranscript('☁️ クラウドで解析中...');
+    }
 
     try {
       console.log('[Whisper] Sending to API with prompt...');
@@ -445,7 +400,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         if (isHallucination(newText)) {
           console.log('[Whisper] Filtered hallucination:', newText);
           setProcessingStatus('ノイズ除去（幻覚フィルタ）');
-          setListenStatus('waiting');
+          setInterimTranscript('🎤 次の音声を待機中...');
         } else {
           // 認識成功時は即座に会話欄に移動
           console.log('[Whisper] Recognized text:', newText);
@@ -461,6 +416,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             animationTimerRef.current = null;
           }
           
+          // リアルタイム欄に結果を即座に表示（チェックマーク付きでWhisper結果を表示）
+          setInterimTranscript(`✅ ${newText}`);
+          
           // 会話欄に追加（生のOpenAI出力、整形はApp.tsx側で行う）
           setTranscript((prev) => {
             const newTranscript = prev ? prev + '\n' + newText : newText;
@@ -469,11 +427,22 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           });
           
           setProcessingStatus('認識成功: ' + newText.substring(0, 20) + '...');
-          setListenStatus('waiting');
+          
+          // 3秒後にリアルタイム欄をクリア（次の音声待機に戻る）
+          // ユーザーが読み切れるように少し長めに保持
+          setTimeout(() => {
+            setInterimTranscript((current) => {
+              // もし既に次の音声が入ってきていたら上書きしない
+              if (current === newText) {
+                return '🎤 次の音声を待機中...';
+              }
+              return current;
+            });
+          }, 3000);
         }
       } else {
         setProcessingStatus('音声なし（無音）');
-        setListenStatus('waiting');
+        setInterimTranscript('🎤 次の音声を待機中...');
       }
     } catch (e) {
       console.error('[Whisper] Transcription error:', e);
@@ -502,8 +471,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
     setProcessingStatus('開始中...');
-    setListenStatus('waiting');
-    setInterimTranscript(''); // リアルタイム欄をクリア
 
     try {
       const recorder = new AudioRecorder();
@@ -529,13 +496,19 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         const now = Date.now();
         
         if (isSpeaking) {
-          // 発話中
+          // 発話中 - リアルタイム表示を更新
           if (speechStartTimeRef.current === null) {
             speechStartTimeRef.current = now;
             console.log('[VAD] Speech started');
           }
-          // ステータスを「聴いています」に設定（アイコン表示用）
-          setListenStatus('listening');
+          // 発話中の秒数を表示
+          // Web Speechの仮テキストがあればそれを表示、なければステータス表示
+          if (webSpeechInterimRef.current && !isProcessingRef.current) {
+            setInterimTranscript(`💬 ${webSpeechInterimRef.current}`);
+          } else if (!isProcessingRef.current) {
+            const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
+            setInterimTranscript(`🔊 聴いています... (${speechDuration}秒)`);
+          }
           silenceStartTimeRef.current = null;
           
           // VADタイムアウトをクリア
@@ -554,7 +527,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           // 無音
           if (speechStartTimeRef.current === null && !isProcessingRef.current) {
             // まだ発話が始まっていない
-            setListenStatus('waiting');
+            setInterimTranscript('🎤 音声を待機中...');
           }
           if (speechStartTimeRef.current !== null) {
             // 発話後の無音
@@ -564,6 +537,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             
             const silenceDuration = now - silenceStartTimeRef.current;
             const speechDuration = now - speechStartTimeRef.current;
+            
+            // 無音中の表示
+            if (silenceDuration > 100) {
+              setInterimTranscript(`⏳ 言葉の区切りを待機中... (${(silenceDuration/1000).toFixed(1)}秒)`);
+            }
             
             // 無音が一定時間続いたら送信
             if (silenceDuration >= VAD_SILENCE_DURATION && speechDuration >= VAD_MIN_SPEECH_DURATION) {
@@ -647,7 +625,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setIsSpeechDetected(false);
     setAudioLevel(0);
     setProcessingStatus('');
-    setListenStatus('idle');
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
   }, [silenceThreshold, stopWebSpeech]);
@@ -682,7 +659,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     audioLevel,
     currentGain,
     processingStatus,
-    listenStatus, // アイコン表示用のステータス
     setGain,
     startListening,
     stopListening,
