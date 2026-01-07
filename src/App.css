@@ -58,6 +58,44 @@
   flex-shrink: 0;
 }
 
+/* リスニングステータスアイコン */
+.listen-status-icon {
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.listen-status-icon.waiting {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.listen-status-icon.listening {
+  background: rgba(76, 175, 80, 0.6);
+  animation: pulse-listening 1s ease-in-out infinite;
+}
+
+.listen-status-icon.processing {
+  background: rgba(33, 150, 243, 0.6);
+  animation: pulse-processing 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse-listening {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.8; }
+}
+
+@keyframes pulse-processing {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -144,21 +182,25 @@
   padding: 12px;
 }
 
-/* リアルタイム欄 - 比率1 */
+/* リアルタイム欄 - 1行固定 */
 .realtime-section {
-  flex: 1;
-  min-height: 60px;
+  flex: 0 0 auto;
   background: var(--surface-elevated);
+  padding: 4px 8px;
 }
 
 .realtime-text {
   font-size: var(--font-size-large);
   color: var(--text-secondary);
-  padding: 8px;
+  padding: 6px 10px;
   background: white;
   border-radius: 8px;
-  min-height: 40px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: all 0.3s;
+  min-height: 32px;
+  line-height: 32px;
 }
 
 .realtime-text.active {
@@ -167,10 +209,10 @@
   box-shadow: 0 0 10px rgba(50, 205, 50, 0.3);
 }
 
-/* 会話欄 - 比率1 */
+/* 会話欄 - 拡大（比率2） */
 .conversation-section {
-  flex: 1;
-  min-height: 60px;
+  flex: 2;
+  min-height: 80px;
 }
 
 .conversation-entry {
