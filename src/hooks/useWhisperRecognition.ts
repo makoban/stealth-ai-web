@@ -136,6 +136,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const isProcessingRef = useRef<boolean>(false);
   const pendingTextRef = useRef<string>('');
   
+  // Web Speech API用（リアルタイム仮テキスト表示用）
+  const webSpeechRef = useRef<SpeechRecognition | null>(null);
+  const webSpeechInterimRef = useRef<string>(''); // Web Speechの仮テキスト
+  
   const whisperPromptRef = useRef<string>(whisperPrompt);
   const recentAudioLevelsRef = useRef<number[]>([]); // 最近の音声レベルを記録
   const maxAudioLevelRef = useRef<number>(0); // 期間中の最大音声レベル
@@ -162,6 +166,92 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setIsSupported(supported);
     if (!supported) {
       setError('このブラウザは音声録音をサポートしていません。');
+    }
+  }, []);
+
+  // Web Speech APIの開始（リアルタイム仮テキスト表示用）
+  const startWebSpeech = useCallback(() => {
+    // Web Speech APIが利用可能かチェック
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.log('[WebSpeech] Not supported');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.continuous = true;
+      recognition.interimResults = true; // 仮結果を取得
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (!result.isFinal) {
+            interim += result[0].transcript;
+          }
+        }
+        if (interim) {
+          webSpeechInterimRef.current = interim;
+          // Whisperが処理中でなければ、仮テキストを表示
+          if (!isProcessingRef.current) {
+            setInterimTranscript(`💬 ${interim}`);
+          }
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.log('[WebSpeech] Error:', event.error);
+        // エラー時は再起動を試みる
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+          setTimeout(() => {
+            if (webSpeechRef.current) {
+              try {
+                webSpeechRef.current.start();
+              } catch (e) {
+                // 既に開始している場合は無視
+              }
+            }
+          }, 100);
+        }
+      };
+
+      recognition.onend = () => {
+        console.log('[WebSpeech] Ended, restarting...');
+        // 録音中なら再起動
+        if (recorderRef.current?.isRecording()) {
+          setTimeout(() => {
+            if (webSpeechRef.current) {
+              try {
+                webSpeechRef.current.start();
+              } catch (e) {
+                // 既に開始している場合は無視
+              }
+            }
+          }, 100);
+        }
+      };
+
+      recognition.start();
+      webSpeechRef.current = recognition;
+      console.log('[WebSpeech] Started');
+    } catch (e) {
+      console.error('[WebSpeech] Failed to start:', e);
+    }
+  }, []);
+
+  // Web Speech APIの停止
+  const stopWebSpeech = useCallback(() => {
+    if (webSpeechRef.current) {
+      try {
+        webSpeechRef.current.stop();
+      } catch (e) {
+        // 無視
+      }
+      webSpeechRef.current = null;
+      webSpeechInterimRef.current = '';
+      console.log('[WebSpeech] Stopped');
     }
   }, []);
 
@@ -324,9 +414,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
             console.log('[VAD] Speech started');
           }
           // 発話中の秒数を表示
-          const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
-          // リアルタイム感を出すため、認識中であることを強調
-          setInterimTranscript(`🔊 音声をキャッチ中... (${speechDuration}秒)`);
+          // Web Speechの仮テキストがあればそれを表示、なければステータス表示
+          if (webSpeechInterimRef.current && !isProcessingRef.current) {
+            setInterimTranscript(`💬 ${webSpeechInterimRef.current}`);
+          } else if (!isProcessingRef.current) {
+            const speechDuration = Math.floor((now - speechStartTimeRef.current) / 1000);
+            setInterimTranscript(`🔊 聴いています... (${speechDuration}秒)`);
+          }
           silenceStartTimeRef.current = null;
           
           // VADタイムアウトをクリア
@@ -382,6 +476,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('listening');
       setProcessingStatus('解析中');
 
+      // Web Speech APIを並行で開始（リアルタイム仮テキスト用）
+      startWebSpeech();
+
       // VADのみで動作（固定間隔なし）
       // 認識成功時に即座に会話欄に移動するのでflush不要
 
@@ -391,11 +488,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('idle');
       setProcessingStatus('');
     }
-  }, [isSupported, currentGain, processAudio]);
+  }, [isSupported, currentGain, processAudio, startWebSpeech]);
 
   const stopListening = useCallback(async () => {
     setState('stopping');
     setProcessingStatus('停止中...');
+
+    // Web Speech APIを停止
+    stopWebSpeech();
 
     // VADタイムアウトをクリア
     if (vadTimeoutRef.current) {
@@ -439,7 +539,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setProcessingStatus('');
     maxAudioLevelRef.current = 0;
     recentAudioLevelsRef.current = [];
-  }, [silenceThreshold]);
+  }, [silenceThreshold, stopWebSpeech]);
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
