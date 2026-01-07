@@ -319,12 +319,21 @@ export class AudioRecorder {
     return null;
   }
 
-  // 現在までの録音データを取得（録音は継続）
+  // 現在までの録音データを取得（録音は継続、データをクリア）
   getIntermediateBlob(): Blob | null {
     if (this.audioData.length > 0) {
       const blob = this.createWavBlob();
       this.audioData = []; // データをクリア
       return blob;
+    }
+    return null;
+  }
+
+  // 現在までの録音データをコピーして取得（録音は継続、データはクリアしない）
+  getIntermediateBlobCopy(): Blob | null {
+    if (this.audioData.length > 0) {
+      return this.createWavBlob();
+      // データはクリアしない
     }
     return null;
   }

@@ -135,23 +135,24 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   }, []);
 
   // ===== Whisper①: リアルタイム用（1.5秒固定） =====
+  // リアルタイム用はバッファをクリアしない（会話用Whisper②のために残す）
   const sendRealtimeWhisper = useCallback(async () => {
     if (!recorderRef.current || realtimeProcessingRef.current || !recorderRef.current.isRecording()) {
       return;
     }
 
     const maxLevel = realtimeAudioLevelRef.current;
+    realtimeAudioLevelRef.current = 0;
     
     // バンドパスフィルタ後の音声レベルで判定（人の声がない場合は送信しない）
     if (maxLevel < silenceThreshold) {
       log('REALTIME', `No voice detected (level: ${maxLevel.toFixed(3)}), skipping`);
-      recorderRef.current.getIntermediateBlob(); // バッファクリア
-      realtimeAudioLevelRef.current = 0;
+      // バッファはクリアしない（会話用のために残す）
       return;
     }
 
-    const blob = recorderRef.current.getIntermediateBlob();
-    realtimeAudioLevelRef.current = 0;
+    // コピーを取得（バッファはクリアしない）
+    const blob = recorderRef.current.getIntermediateBlobCopy();
     
     if (!blob || blob.size < 1000) {
       return;
