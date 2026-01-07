@@ -157,7 +157,6 @@ export default function App() {
   
   // Whisper API
   const whisper = useWhisperRecognition({
-    intervalMs: 4000,
     whisperPrompt: whisperPrompt,
     onBufferReady: (text: string) => {
       // ref経由でコールバックを呼び出す

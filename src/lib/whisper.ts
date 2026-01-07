@@ -183,17 +183,17 @@ export class AudioRecorder {
     // === 高度な音声処理チェーン ===
 
     // 1. ハイパスフィルター（低周波ノイズ除去: エアコン、車の音など）
-    // 人の声は約85Hz以上なので、80Hz以下をカット
+    // 人の声の基本周波数は300Hz以上なので、300Hz以下をカット
     this.highPassFilter = this.audioContext.createBiquadFilter();
     this.highPassFilter.type = 'highpass';
-    this.highPassFilter.frequency.value = 80;
+    this.highPassFilter.frequency.value = 300;
     this.highPassFilter.Q.value = 0.7;
 
     // 2. ローパスフィルター（高周波ノイズ除去: キーン音など）
-    // 人の声は約3400Hz以下なので、4000Hz以上をカット
+    // 人の声は約3400Hz以下なので、3400Hz以上をカット
     this.lowPassFilter = this.audioContext.createBiquadFilter();
     this.lowPassFilter.type = 'lowpass';
-    this.lowPassFilter.frequency.value = 4000;
+    this.lowPassFilter.frequency.value = 3400;
     this.lowPassFilter.Q.value = 0.7;
 
     // 3. ゲインノード（増幅）
@@ -253,7 +253,7 @@ export class AudioRecorder {
       this.startLevelMonitoring();
     }
 
-    console.log('[AudioRecorder] Started with advanced audio processing (HP: 80Hz, LP: 4000Hz, Compressor, Gain:', this.gainValue + 'x)');
+    console.log('[AudioRecorder] Started with advanced audio processing (HP: 300Hz, LP: 3400Hz, Compressor, Gain:', this.gainValue + 'x)');
   }
 
   private startLevelMonitoring(): void {
