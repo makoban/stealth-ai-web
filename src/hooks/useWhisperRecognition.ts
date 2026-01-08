@@ -100,6 +100,16 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const MAX_RECORDING_DURATION = 10000; // 10秒で強制送信
   const maxDurationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
+  // デバッグ用統計
+  const debugStatsRef = useRef({
+    totalSamples: 0,
+    speechSamples: 0,
+    silenceSamples: 0,
+    minLevel: 1,
+    maxLevel: 0,
+    lastLogTime: 0,
+  });
+  
   const whisperPromptRef = useRef<string>(whisperPrompt);
   const onBufferReadyRef = useRef(onBufferReady);
 
@@ -201,12 +211,41 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   }, [updateDisplay]);
 
   // VAD処理
-  // 無音検出デバッグ用
-  const lastSilenceLogRef = useRef<number>(0);
-  
   const handleVAD = useCallback((level: number) => {
     const isSpeaking = level > VAD_SPEECH_THRESHOLD;
     setIsSpeechDetected(isSpeaking);
+    
+    // デバッグ統計を更新
+    const stats = debugStatsRef.current;
+    stats.totalSamples++;
+    if (isSpeaking) {
+      stats.speechSamples++;
+    } else {
+      stats.silenceSamples++;
+    }
+    if (level < stats.minLevel) stats.minLevel = level;
+    if (level > stats.maxLevel) stats.maxLevel = level;
+    
+    // 1秒ごとにデバッグログを出力
+    const now = Date.now();
+    if (now - stats.lastLogTime > 1000) {
+      const speechRatio = stats.totalSamples > 0 ? (stats.speechSamples / stats.totalSamples * 100).toFixed(1) : '0';
+      log('LEVEL_STATS', 
+        `level=${level.toFixed(4)} | ` +
+        `min=${stats.minLevel.toFixed(4)} max=${stats.maxLevel.toFixed(4)} | ` +
+        `speech=${speechRatio}% (${stats.speechSamples}/${stats.totalSamples}) | ` +
+        `threshold=${VAD_SPEECH_THRESHOLD} | ` +
+        `hasSpeech=${hasSpeechRef.current} | ` +
+        `isSpeaking=${isSpeaking}`
+      );
+      // 統計リセット
+      stats.totalSamples = 0;
+      stats.speechSamples = 0;
+      stats.silenceSamples = 0;
+      stats.minLevel = 1;
+      stats.maxLevel = 0;
+      stats.lastLogTime = now;
+    }
     
     if (isSpeaking) {
       // 音声検出
@@ -219,20 +258,18 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         vadTimerRef.current = null;
       }
     } else {
-      // 無音検出 - デバッグログ（1秒に1回）
-      const now = Date.now();
-      if (now - lastSilenceLogRef.current > 1000) {
-        lastSilenceLogRef.current = now;
-        const silenceDuration = lastSpeechTimeRef.current > 0 ? now - lastSpeechTimeRef.current : 0;
-        log('SILENCE', `level=${level.toFixed(4)}, hasSpeech=${hasSpeechRef.current}, silenceDuration=${silenceDuration}ms`);
-      }
-      
+      // 無音検出
       // 音声があった後の無音のみ処理
       if (hasSpeechRef.current && lastSpeechTimeRef.current > 0) {
         const silenceDuration = Date.now() - lastSpeechTimeRef.current;
         
+        // 無音が100ms以上続いたらログ出力（VAD発火前の状態確認用）
+        if (silenceDuration >= 100 && silenceDuration < VAD_SILENCE_DURATION) {
+          log('SILENCE_BUILDING', `${silenceDuration}ms / ${VAD_SILENCE_DURATION}ms needed`);
+        }
+        
         if (silenceDuration >= VAD_SILENCE_DURATION && !vadTimerRef.current) {
-          log('VAD', `Silence detected: ${silenceDuration}ms, triggering Whisper`);
+          log('VAD_TRIGGER', `Silence ${silenceDuration}ms >= ${VAD_SILENCE_DURATION}ms, triggering Whisper`);
           
           // VADタイマー発火
           vadTimerRef.current = setTimeout(() => {
@@ -261,6 +298,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
 
     log('START', 'Starting VAD listening...');
+    log('START', `VAD_SPEECH_THRESHOLD=${VAD_SPEECH_THRESHOLD}, VAD_SILENCE_DURATION=${VAD_SILENCE_DURATION}ms, MAX_RECORDING_DURATION=${MAX_RECORDING_DURATION}ms`);
     setError(null);
     setState('starting');
     
@@ -269,6 +307,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     lastSpeechTimeRef.current = 0;
     hasSpeechRef.current = false;
     recordingStartTimeRef.current = Date.now();
+    debugStatsRef.current = {
+      totalSamples: 0,
+      speechSamples: 0,
+      silenceSamples: 0,
+      minLevel: 1,
+      maxLevel: 0,
+      lastLogTime: Date.now(),
+    };
     
     // 最大文字数を計算
     maxCharsRef.current = calculateMaxChars();
@@ -277,6 +323,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     try {
       const recorder = new AudioRecorder();
       recorder.setGain(currentGain);
+      log('START', `Gain set to: ${currentGain}`);
       
       await recorder.start((level, clipping) => {
         setAudioLevel(level);
@@ -294,6 +341,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       maxDurationTimerRef.current = setInterval(() => {
         if (hasSpeechRef.current && recordingStartTimeRef.current > 0) {
           const elapsed = Date.now() - recordingStartTimeRef.current;
+          log('MAX_DURATION_CHECK', `elapsed=${elapsed}ms, hasSpeech=${hasSpeechRef.current}, isProcessing=${isProcessingRef.current}`);
           if (elapsed >= MAX_RECORDING_DURATION && !isProcessingRef.current) {
             log('MAX_DURATION', `${elapsed}ms elapsed, forcing Whisper send`);
             hasSpeechRef.current = false;
