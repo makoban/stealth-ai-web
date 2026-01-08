@@ -228,6 +228,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setIsSpeechDetected(isSpeaking);
     
     if (isSpeaking) {
+      // 音声検出時のログ（頻度を減らすため条件付き）
+      if (!lastSpeechTimeRef.current || Date.now() - lastSpeechTimeRef.current > 1000) {
+        log('VAD', `Speech detected, level: ${level.toFixed(3)}`);
+      }
       lastSpeechTimeRef.current = Date.now();
       
       // VADタイマーをクリア（話し中）
@@ -240,16 +244,23 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       const silenceDuration = Date.now() - lastSpeechTimeRef.current;
       
       if (silenceDuration >= VAD_SILENCE_DURATION && !vadTimerRef.current && recorderRef.current) {
+        log('VAD', `Silence duration: ${silenceDuration}ms, starting timer`);
         vadTimerRef.current = setTimeout(() => {
           vadTimerRef.current = null;
           
           // VAD終了: 会話用Whisper②に送信
           if (recorderRef.current && recorderRef.current.isRecording()) {
+            log('VAD', 'Getting conversation blob...');
             const blob = recorderRef.current.getConversationBlob();
+            log('VAD', `Blob size: ${blob?.size || 0} bytes`);
             if (blob && blob.size > 1000) {
               log('VAD', `Silence detected (${silenceDuration}ms), sending to Whisper②`);
               sendConversationWhisper(blob);
+            } else {
+              log('VAD', 'Blob too small or null, skipping');
             }
+          } else {
+            log('VAD', 'Recorder not recording, skipping');
           }
         }, 100); // 少し待ってから送信
       }
