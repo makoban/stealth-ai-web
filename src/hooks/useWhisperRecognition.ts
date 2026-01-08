@@ -75,6 +75,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [processingStatus, setProcessingStatus] = useState<string>('');
   const [statusIcon, setStatusIcon] = useState<StatusIcon>('stopped');
   const [calibrationProgress, setCalibrationProgress] = useState<number>(0);
+  const [isAgcEnabled, setIsAgcEnabled] = useState<boolean>(true); // AGCデフォルトON
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const isProcessingRef = useRef<boolean>(false);
@@ -84,6 +85,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const calibrationLevels = useRef<number[]>([]);
   const calibratedGain = useRef<number>(DEFAULT_GAIN);
   const calibratedThreshold = useRef<number>(0.5);
+  
+  // AGC用
+  const AGC_TARGET_LEVEL = 0.65; // 目標音量レベル
+  const AGC_SMOOTHING = 0.1; // スムージング係数（0.1 = 緩やかに調整）
+  const AGC_MIN_LEVEL = 0.02; // これ以下は無音とみなす
+  const lastAgcUpdateRef = useRef<number>(0);
+  const AGC_UPDATE_INTERVAL = 100; // 100msごとに更新
   
   // VAD用
   const lastSpeechTimeRef = useRef<number>(0);
@@ -189,12 +197,48 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
+  // AGC処理（常時リアルタイムゲイン調整）
+  const processAgc = useCallback((level: number) => {
+    if (!isAgcEnabled) return;
+    if (isCalibrating.current) return;
+    
+    const now = Date.now();
+    if (now - lastAgcUpdateRef.current < AGC_UPDATE_INTERVAL) return;
+    lastAgcUpdateRef.current = now;
+    
+    // 無音時は調整しない（ノイズでゲインが暴走するのを防止）
+    if (level < AGC_MIN_LEVEL) return;
+    
+    // 目標レベルとの差分からゲインを調整
+    const targetRatio = AGC_TARGET_LEVEL / level;
+    const targetGain = calibratedGain.current * targetRatio;
+    
+    // スムージング（急激な変化を防止）
+    const newGain = calibratedGain.current + (targetGain - calibratedGain.current) * AGC_SMOOTHING;
+    
+    // 範囲制限
+    const clampedGain = Math.max(MIN_GAIN, Math.min(MAX_GAIN, Math.round(newGain)));
+    
+    // 変化がある場合のみ更新
+    if (Math.abs(clampedGain - calibratedGain.current) >= 1) {
+      calibratedGain.current = clampedGain;
+      setCurrentGain(clampedGain);
+      if (recorderRef.current) {
+        recorderRef.current.setGain(clampedGain);
+      }
+      log('AGC', `level=${level.toFixed(3)} -> gain=${clampedGain}x (target=${AGC_TARGET_LEVEL})`);
+    }
+  }, [isAgcEnabled]);
+
   // VAD処理
   const handleVAD = useCallback((level: number) => {
     // キャリブレーション中はVAD処理をスキップ
     if (isCalibrating.current) {
       return;
     }
+    
+    // AGC処理
+    processAgc(level);
     
     const threshold = calibratedThreshold.current;
     const isSpeaking = level > threshold;
@@ -276,7 +320,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         }
       }
     }
-  }, [sendToWhisper]);
+  }, [sendToWhisper, processAgc]);
 
   // 自動キャリブレーション
   const runCalibration = useCallback(async (_recorder: AudioRecorder): Promise<{ gain: number; threshold: number }> => {
@@ -535,6 +579,8 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     statusIcon,
     setGain,
     autoAdjustGain,
+    isAgcEnabled,
+    toggleAgc: () => setIsAgcEnabled(prev => !prev),
     startListening,
     stopListening,
     clearTranscript,

@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.33.0';
+const APP_VERSION = 'v3.34.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -269,7 +269,8 @@ export default function App() {
   }, [whisper]);
 
   const setGain = whisper.setGain;
-  const autoAdjustGain = whisper.autoAdjustGain;
+  const isAgcEnabled = whisper.isAgcEnabled;
+  const toggleAgc = whisper.toggleAgc;
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
   
@@ -1044,21 +1045,40 @@ export default function App() {
         <div className="modal-overlay" onClick={() => setShowGainAdjuster(false)}>
           <div className="modal gain-modal" onClick={(e) => e.stopPropagation()}>
             <h2>🎙️ マイクゲイン調整</h2>
+            
+            {/* AGCトグル */}
+            <div className="agc-toggle-container">
+              <label className="agc-toggle">
+                <input
+                  type="checkbox"
+                  checked={isAgcEnabled}
+                  onChange={toggleAgc}
+                />
+                <span className="agc-toggle-slider"></span>
+              </label>
+              <span className="agc-toggle-label">
+                常時自動調整 {isAgcEnabled ? 'ON' : 'OFF'}
+              </span>
+            </div>
+            
             <p className="gain-description">
-              マイクの感度を調整します。<br />
-              「自動調整」で現在の音量に合わせて最適化します。
+              {isAgcEnabled 
+                ? '音量レベル0.65を維持するよう常時自動調整中' 
+                : '手動でゲインを調整してください'
+              }
             </p>
             
-            {/* 自動調整ボタン */}
-            <button 
-              className="auto-adjust-btn"
-              onClick={() => {
-                autoAdjustGain();
-              }}
-              disabled={!isListening}
-            >
-              🎯 自動調整（現在の音量: {(audioLevel * 100).toFixed(0)}%）
-            </button>
+            {/* 現在の音量レベル表示 */}
+            <div className="current-level-display">
+              <span>現在の音量: </span>
+              <span className="level-value">{(audioLevel * 100).toFixed(0)}%</span>
+              <span className="level-bar-mini">
+                <span 
+                  className="level-fill" 
+                  style={{ width: `${Math.min(audioLevel * 100, 100)}%` }}
+                />
+              </span>
+            </div>
             
             <div className="gain-slider-container">
               <div className="gain-value-display">
