@@ -329,6 +329,7 @@ export class AudioRecorder {
 
   // 表示用バッファを取得してクリア（1.5秒ごとに呼ばれる）
   getRealtimeBlob(): Blob | null {
+    console.log('[AudioRecorder] getRealtimeBlob called, buffer chunks:', this.realtimeBuffer.length, ', conversation chunks:', this.conversationBuffer.length);
     if (this.realtimeBuffer.length > 0) {
       const blob = this.createWavBlobFromBuffer(this.realtimeBuffer);
       this.realtimeBuffer = [];  // 表示用バッファのみクリア
@@ -339,11 +340,14 @@ export class AudioRecorder {
 
   // 会話用バッファを取得してクリア（VADで呼ばれる）
   getConversationBlob(): Blob | null {
+    console.log('[AudioRecorder] getConversationBlob called, buffer chunks:', this.conversationBuffer.length);
     if (this.conversationBuffer.length > 0) {
       const blob = this.createWavBlobFromBuffer(this.conversationBuffer);
       this.conversationBuffer = [];  // 会話用バッファのみクリア
+      console.log('[AudioRecorder] Conversation blob created:', blob.size, 'bytes');
       return blob;
     }
+    console.log('[AudioRecorder] Conversation buffer is empty!');
     return null;
   }
 
