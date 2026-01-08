@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.27.0';
+const APP_VERSION = 'v3.28.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -52,6 +52,52 @@ const FONTSIZE_LABELS: Record<FontSize, string> = {
 };
 
 
+
+// ジャンル別の色クラスを取得
+const getGenreColorClass = (genre: string): string => {
+  const genreColors: Record<string, string> = {
+    'ビジネス・仕事': 'business',
+    'テクノロジー・IT': 'tech',
+    '食べ物・グルメ': 'food',
+    'スポーツ': 'sports',
+    '音楽・エンタメ': 'music',
+    '映画・ドラマ': 'movie',
+    'ゲーム': 'game',
+    '旅行・観光': 'travel',
+    '健康・医療': 'health',
+    '教育・学習': 'education',
+    '政治・経済': 'politics',
+    '科学・研究': 'science',
+    'ファッション': 'fashion',
+    '趣味・ホビー': 'hobby',
+    '日常会話': 'daily',
+    'その他': 'other',
+  };
+  return genreColors[genre] || 'other';
+};
+
+// ジャンル別のアイコンを取得
+const getGenreIcon = (genre: string): string => {
+  const genreIcons: Record<string, string> = {
+    'ビジネス・仕事': '💼',
+    'テクノロジー・IT': '💻',
+    '食べ物・グルメ': '🍽️',
+    'スポーツ': '⚽',
+    '音楽・エンタメ': '🎵',
+    '映画・ドラマ': '🎬',
+    'ゲーム': '🎮',
+    '旅行・観光': '✈️',
+    '健康・医療': '🏥',
+    '教育・学習': '📚',
+    '政治・経済': '🏛️',
+    '科学・研究': '🔬',
+    'ファッション': '👗',
+    '趣味・ホビー': '🎨',
+    '日常会話': '💬',
+    'その他': '📌',
+  };
+  return genreIcons[genre] || '📌';
+};
 
 // フィルタリングする不要なテキスト
 const FILTERED_TEXTS = [
@@ -816,13 +862,17 @@ export default function App() {
           </section>
         )}
 
-        {/* 要約欄 */}
+        {/* 要約欄（ジャンル別背景色付き） */}
         {(expandedSection === 'none' || expandedSection === 'summary') && (
           <section
-            className={`section summary-section ${expandedSection === 'summary' ? 'expanded' : ''}`}
+            className={`section summary-section ${expandedSection === 'summary' ? 'expanded' : ''} ${currentGenre ? `genre-${getGenreColorClass(currentGenre.primary)}` : ''}`}
             onClick={() => toggleSection('summary')}
           >
-            <h2>📝 要約 {expandedSection === 'summary' ? '▼' : '▶'}</h2>
+            <h2>
+              {currentGenre && <span className={`genre-icon genre-${getGenreColorClass(currentGenre.primary)}`}>{getGenreIcon(currentGenre.primary)}</span>}
+              {summaryHistory.length > 0 ? summaryHistory[0].summary.slice(0, 20) : '要約'}
+              {expandedSection === 'summary' ? ' ▼' : ' ▶'}
+            </h2>
             <div className="section-content">
               {summaryHistory.length === 0 ? (
                 <p className="placeholder">要約がここに表示されます</p>

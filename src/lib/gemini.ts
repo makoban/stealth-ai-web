@@ -461,7 +461,7 @@ ${recentContext}【現在の会話】: "${conversation}"
 
 JSON形式で回答してください:
 {
-  "summary": "要約（50文字以内）",
+  "summary": "要約（20文字以内）",
   "topics": ["トピック1", "トピック2"],
   "keyPoints": ["ポイント1", "ポイント2"],
   "context": "会話の場面",
