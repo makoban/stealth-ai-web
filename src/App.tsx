@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.30.0';
+const APP_VERSION = 'v3.30.1';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -787,13 +787,11 @@ export default function App() {
           </button>
         </div>
         <div className="header-right">
-          {/* 音量レベルバー（5本、0.5-1.0範囲） */}
+          {/* 音量レベルバー（5本） */}
           <div className="audio-level-bars">
-            {[...Array(5)].map((_, i) => {
-              // 0.5-1.0の範囲を0.1刻みで表示
-              const threshold = 0.5 + (i * 0.1);
+            {[0.5, 0.55, 0.6, 0.65, 0.7].map((threshold, i) => {
               const isActive = audioLevel > threshold;
-              // 左（0.5）が青、右（1.0）が赤のグラデーション
+              // 左（0.5）が青、右（0.7+）が赤のグラデーション
               const hue = 240 - (i * 48); // 240(青) → 48(オレンジ) → 0(赤)
               return (
                 <div
