@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.28.0';
+const APP_VERSION = 'v3.29.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -218,7 +218,7 @@ export default function App() {
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
   const isSpeechDetected = whisper.isSpeechDetected;
-  const statusIcon = whisper.statusIcon;
+  // statusIconは音量バーに置き換えたため削除
   const isSupported = true;
   const speechError = whisper.error;
 
@@ -797,12 +797,24 @@ export default function App() {
           </button>
         </div>
         <div className="header-right">
-          <span className={`header-status-badge ${statusIcon}`}>
-            {statusIcon === 'stopped' && '停止中'}
-            {statusIcon === 'silence' && '無音中'}
-            {statusIcon === 'speaking' && '発声中'}
-            {statusIcon === 'sending' && '区切り'}
-          </span>
+          {/* 音量レベルバー（10本） */}
+          <div className="audio-level-bars">
+            {[...Array(10)].map((_, i) => {
+              const threshold = i / 10;
+              const isActive = audioLevel > threshold;
+              // 左（0）が青、右（1.0）が赤のグラデーション
+              const hue = 240 - (i * 24); // 240(青) → 0(赤)
+              return (
+                <div
+                  key={i}
+                  className={`level-bar ${isActive ? 'active' : ''}`}
+                  style={{
+                    backgroundColor: isActive ? `hsl(${hue}, 80%, 50%)` : '#333',
+                  }}
+                />
+              );
+            })}
+          </div>
           <button onClick={() => setShowLevelSelector(true)} className="level-btn-large">
             📚 {KNOWLEDGE_LEVEL_LABELS[knowledgeLevel]}
           </button>

@@ -137,36 +137,27 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* ヘッダー用状態バッジ */
-.header-status-badge {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  transition: all 0.3s ease;
+/* 音量レベルバー */
+.audio-level-bars {
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 20px;
+  margin-right: 8px;
+  padding: 3px 5px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
 }
 
-.header-status-badge.stopped {
-  background: rgba(158, 158, 158, 0.8);
-  color: white;
+.level-bar {
+  width: 5px;
+  height: 100%;
+  border-radius: 2px;
+  transition: background-color 0.05s ease;
 }
 
-.header-status-badge.silence {
-  background: rgba(33, 150, 243, 0.8);
-  color: white;
-  animation: pulse-badge 2s ease-in-out infinite;
-}
-
-.header-status-badge.speaking {
-  background: rgba(76, 175, 80, 0.9);
-  color: white;
-  animation: pulse-badge-fast 0.5s ease-in-out infinite;
-}
-
-.header-status-badge.sending {
-  background: rgba(255, 152, 0, 0.9);
-  color: white;
+.level-bar.active {
+  box-shadow: 0 0 3px currentColor;
 }
 
 /* 知識レベルボタン（大きい文字） */
