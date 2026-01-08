@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.34.0';
+const APP_VERSION = 'v3.35.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -216,11 +216,11 @@ export default function App() {
   // Whisperの音声認識状態
   const transcript = whisper.transcript;
   const isListening = whisper.isListening;
-  const isCalibrating = whisper.isCalibrating;
-  const calibrationProgress = whisper.calibrationProgress;
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
   const currentGain = whisper.currentGain;
+  const noiseFloor = whisper.noiseFloor;
+  const vadState = whisper.vadState;
   // isSpeechDetectedは音量バーに置き換えたため削除
   // statusIconは音量バーに置き換えたため削除
   const isSupported = true;
@@ -793,35 +793,31 @@ export default function App() {
           </button>
         </div>
         <div className="header-right">
-          {/* キャリブレーション中はプログレスバー表示 */}
-          {isCalibrating ? (
-            <div className="calibration-indicator" title="マイクの感度を自動調整中...">
-              <div className="calibration-progress" style={{ width: `${calibrationProgress * 100}%` }} />
-              <span className="calibration-text">調整中</span>
-            </div>
-          ) : (
-            /* 音量レベルバー（5本）- タップでゲイン調整 */
-            <div 
-              className="audio-level-bars clickable" 
-              title={`ゲイン: ${currentGain}x (タップで調整)`}
-              onClick={() => setShowGainAdjuster(true)}
-            >
-              {[0.5, 0.55, 0.6, 0.65, 0.7].map((threshold, i) => {
-                const isActive = audioLevel > threshold;
-                // 左（0.5）が青、右（0.7+）が赤のグラデーション
-                const hue = 240 - (i * 48); // 240(青) → 48(オレンジ) → 0(赤)
-                return (
-                  <div
-                    key={i}
-                    className={`level-bar ${isActive ? 'active' : ''}`}
-                    style={{
-                      backgroundColor: isActive ? `hsl(${hue}, 80%, 50%)` : '#333',
-                    }}
-                  />
-                );
-              })}
-            </div>
-          )}
+          {/* VAD状態表示 + 音量レベルバー（5本）- タップでゲイン調整 */}
+          <div 
+            className={`audio-level-bars clickable ${vadState === 'speech' || vadState === 'maybe_silence' ? 'speaking' : ''}`}
+            title={`ゲイン: ${currentGain}x | ノイズフロア: ${noiseFloor.toFixed(3)} | VAD: ${vadState}`}
+            onClick={() => setShowGainAdjuster(true)}
+          >
+            {[0.3, 0.4, 0.5, 0.6, 0.7].map((threshold, i) => {
+              const isActive = audioLevel > threshold;
+              // VAD状態に応じて色を変更
+              const isSpeaking = vadState === 'speech' || vadState === 'maybe_silence';
+              let hue = 240 - (i * 48); // デフォルト: 青→オレンジ
+              if (isSpeaking && isActive) {
+                hue = 120; // 発話中は緑
+              }
+              return (
+                <div
+                  key={i}
+                  className={`level-bar ${isActive ? 'active' : ''}`}
+                  style={{
+                    backgroundColor: isActive ? `hsl(${hue}, 80%, 50%)` : '#333',
+                  }}
+                />
+              );
+            })}
+          </div>
           <button onClick={() => setShowLevelSelector(true)} className="level-btn-large">
             📚 {KNOWLEDGE_LEVEL_LABELS[knowledgeLevel]}
           </button>
@@ -1063,10 +1059,30 @@ export default function App() {
             
             <p className="gain-description">
               {isAgcEnabled 
-                ? '音量レベル0.65を維持するよう常時自動調整中' 
+                ? 'VAD→AGC構造: 発話中のみゲインを自動調整' 
                 : '手動でゲインを調整してください'
               }
             </p>
+            
+            {/* VAD状態とノイズフロア表示 */}
+            <div className="vad-status-display">
+              <div className="vad-row">
+                <span>VAD状態: </span>
+                <span className={`vad-state ${vadState}`}>
+                  {vadState === 'silence' && '🔇 無音'}
+                  {vadState === 'maybe_speech' && '🔉 検出中...'}
+                  {vadState === 'speech' && '🗣️ 発話中'}
+                  {vadState === 'maybe_silence' && '🔈 終了判定中...'}
+                </span>
+              </div>
+              <div className="vad-row">
+                <span>ノイズフロア: </span>
+                <span className="noise-floor-value">{(noiseFloor * 100).toFixed(1)}%</span>
+                <span className="threshold-info">
+                  (開始: {(noiseFloor * 3.5 * 100).toFixed(0)}% / 終了: {(noiseFloor * 1.8 * 100).toFixed(0)}%)
+                </span>
+              </div>
+            </div>
             
             {/* 現在の音量レベル表示 */}
             <div className="current-level-display">

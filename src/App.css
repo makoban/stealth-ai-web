@@ -758,6 +758,62 @@
   color: var(--text-primary);
 }
 
+/* VAD状態表示 */
+.vad-status-display {
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.vad-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.vad-row:last-child {
+  margin-bottom: 0;
+}
+
+.vad-state {
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.vad-state.silence {
+  background: #e0e0e0;
+  color: #666;
+}
+
+.vad-state.maybe_speech {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.vad-state.speech {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.vad-state.maybe_silence {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.noise-floor-value {
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.threshold-info {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 /* 現在の音量レベル表示 */
 .current-level-display {
   display: flex;
