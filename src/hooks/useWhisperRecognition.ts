@@ -3,6 +3,9 @@ import { AudioRecorder, transcribeAudio } from '../lib/whisper';
 
 export type RecognitionState = 'idle' | 'starting' | 'listening' | 'processing' | 'stopping';
 
+// 状態アイコン
+export type StatusIcon = 'stopped' | 'silence' | 'listening';
+
 export interface UseWhisperRecognitionOptions {
   intervalMs?: number;
   silenceThreshold?: number;
@@ -48,22 +51,6 @@ function isHallucination(text: string): boolean {
   return false;
 }
 
-// 画面サイズから表示可能文字数を計算
-function calculateMaxChars(): number {
-  const realtimeElement = document.querySelector('.realtime-text');
-  if (!realtimeElement) return 20;
-  
-  const computedStyle = window.getComputedStyle(realtimeElement);
-  const width = realtimeElement.clientWidth;
-  const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
-  const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
-  const availableWidth = width - paddingLeft - paddingRight - 30;
-  const fontSize = parseFloat(computedStyle.fontSize) || 16;
-  const maxChars = Math.floor((availableWidth / fontSize) * 0.8);
-  
-  return Math.max(10, maxChars);
-}
-
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
     whisperPrompt = '',
@@ -71,7 +58,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   } = options;
 
   const [transcript, setTranscript] = useState<string>('');
-  const [interimTranscript, setInterimTranscript] = useState<string>('');
   const [state, setState] = useState<RecognitionState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState<boolean>(false);
@@ -80,13 +66,10 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const [isClipping, setIsClipping] = useState<boolean>(false);
   const [currentGain, setCurrentGain] = useState<number>(50);
   const [processingStatus, setProcessingStatus] = useState<string>('');
+  const [statusIcon, setStatusIcon] = useState<StatusIcon>('stopped');
 
   const recorderRef = useRef<AudioRecorder | null>(null);
   const isProcessingRef = useRef<boolean>(false);
-  
-  // リアルタイム表示用
-  const displayTextRef = useRef<string>('');
-  const maxCharsRef = useRef<number>(20);
   
   // VAD用
   const lastSpeechTimeRef = useRef<number>(0);
@@ -130,21 +113,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // シンプル表示更新：新テキストを末尾に追加、maxChars超えたら先頭削除
-  const updateDisplay = useCallback((newText: string) => {
-    const combined = displayTextRef.current + newText;
-    const maxChars = maxCharsRef.current;
-    
-    if (combined.length > maxChars) {
-      displayTextRef.current = combined.slice(-maxChars);
-    } else {
-      displayTextRef.current = combined;
-    }
-    
-    log('DISPLAY', `Updated: "${displayTextRef.current}" (${displayTextRef.current.length}/${maxChars})`);
-    setInterimTranscript(`💬 ${displayTextRef.current}`);
-  }, []);
-
   const setGain = useCallback((value: number) => {
     setCurrentGain(value);
     if (recorderRef.current) {
@@ -186,14 +154,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         } else {
           log('WHISPER', `Valid text: "${newText}"`);
           
-          // リアルタイム表示を更新
-          updateDisplay(newText);
-          
-          // transcript更新
+          // transcript更新（重複防止のため、onBufferReadyのみで会話欄に追加）
           setTranscript(prev => prev ? prev + '\n' + newText : newText);
           setProcessingStatus('認識成功');
           
-          // Geminiに送信
+          // Geminiに送信（これが唯一の会話欄追加経路）
           if (onBufferReadyRef.current) {
             onBufferReadyRef.current(newText);
           }
@@ -208,12 +173,19 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     } finally {
       isProcessingRef.current = false;
     }
-  }, [updateDisplay]);
+  }, []);
 
   // VAD処理
   const handleVAD = useCallback((level: number) => {
     const isSpeaking = level > VAD_SPEECH_THRESHOLD;
     setIsSpeechDetected(isSpeaking);
+    
+    // 状態アイコンを更新
+    if (isSpeaking) {
+      setStatusIcon('listening');
+    } else {
+      setStatusIcon('silence');
+    }
     
     // デバッグ統計を更新
     const stats = debugStatsRef.current;
@@ -280,15 +252,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         }
       }
     }
-    
-    // 状態表示（リアルタイム表示がない場合のみ）
-    if (!displayTextRef.current) {
-      if (isSpeaking) {
-        setInterimTranscript('🔊 聴いています...');
-      } else {
-        setInterimTranscript('🎤 音声を待機中...');
-      }
-    }
   }, [sendToWhisper]);
 
   const startListening = useCallback(async () => {
@@ -301,9 +264,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     log('START', `VAD_SPEECH_THRESHOLD=${VAD_SPEECH_THRESHOLD}, VAD_SILENCE_DURATION=${VAD_SILENCE_DURATION}ms, MAX_RECORDING_DURATION=${MAX_RECORDING_DURATION}ms`);
     setError(null);
     setState('starting');
+    setStatusIcon('silence');
     
     // 全てリセット
-    displayTextRef.current = '';
     lastSpeechTimeRef.current = 0;
     hasSpeechRef.current = false;
     recordingStartTimeRef.current = Date.now();
@@ -315,10 +278,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       maxLevel: 0,
       lastLogTime: Date.now(),
     };
-    
-    // 最大文字数を計算
-    maxCharsRef.current = calculateMaxChars();
-    log('START', `Max chars: ${maxCharsRef.current}`);
 
     try {
       const recorder = new AudioRecorder();
@@ -356,12 +315,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       log('START', `Error: ${e}`);
       setError('マイクの使用が許可されていません');
       setState('idle');
+      setStatusIcon('stopped');
     }
   }, [isSupported, currentGain, handleVAD, sendToWhisper]);
 
   const stopListening = useCallback(async () => {
     log('STOP', 'Stopping...');
     setState('stopping');
+    setStatusIcon('stopped');
 
     // タイマークリア
     if (vadTimerRef.current) {
@@ -372,8 +333,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       clearInterval(maxDurationTimerRef.current);
       maxDurationTimerRef.current = null;
     }
-    
-    displayTextRef.current = '';
 
     if (recorderRef.current) {
       const finalBlob = recorderRef.current.stop();
@@ -381,7 +340,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       // 最終音声があれば送信
       if (finalBlob && finalBlob.size > 1000 && hasSpeechRef.current) {
         setState('processing');
-        setInterimTranscript('最終処理中...');
         
         try {
           const result = await transcribeAudio(finalBlob, whisperPromptRef.current);
@@ -401,7 +359,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
 
     setState('idle');
-    setInterimTranscript('');
     setIsSpeechDetected(false);
     setAudioLevel(0);
     setProcessingStatus('');
@@ -411,8 +368,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
-    setInterimTranscript('');
-    displayTextRef.current = '';
   }, []);
 
   useEffect(() => {
@@ -425,7 +380,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
 
   return {
     transcript,
-    interimTranscript,
     state,
     isListening: state === 'listening' || state === 'processing',
     isSpeechDetected,
@@ -435,6 +389,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     audioLevel,
     currentGain,
     processingStatus,
+    statusIcon,
     setGain,
     startListening,
     stopListening,

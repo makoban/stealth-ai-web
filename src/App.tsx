@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.22.3';
+const APP_VERSION = 'v3.23.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -168,11 +168,11 @@ export default function App() {
 
   // Whisperの音声認識状態
   const transcript = whisper.transcript;
-  const interimTranscript = whisper.interimTranscript;
   const isListening = whisper.isListening;
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
   const isSpeechDetected = whisper.isSpeechDetected;
+  const statusIcon = whisper.statusIcon;
   const isSupported = true;
   const speechError = whisper.error;
 
@@ -607,7 +607,7 @@ export default function App() {
     };
   }, [updateSummary, updateGenre, processText]);
 
-  // transcript変更を監視（リアルタイム欄から会話欄に移動したとき）- バッファ方式では不要だが互換性のため残す
+  // transcript変更を監視（fullConversation更新のみ、会話欄追加はonBufferReadyで行う）
   useEffect(() => {
     console.log('[App] transcript changed:', { 
       transcript: transcript?.substring(0, 50), 
@@ -617,35 +617,27 @@ export default function App() {
     if (!transcript) return;
 
     const newText = transcript.slice(lastProcessedTranscript.current.length).trim();
-    console.log('[App] newText:', newText);
 
     if (newText.length > 0) {
       lastProcessedTranscript.current = transcript;
 
       const segments = newText.split('\n').filter(s => s.trim().length > 0);
       const filteredSegments = segments.filter(segment => !shouldFilterText(segment));
-      console.log('[App] segments:', segments.length, 'filtered:', filteredSegments.length);
 
       if (filteredSegments.length > 0) {
         const filteredText = filteredSegments.join(' ');
-        console.log('[App] Processing text:', filteredText);
         
+        // fullConversationのみ更新（要約・ジャンル推定用）
+        // 会話欄への追加はonBufferReadyで行うため、ここではprocessTextを呼ばない
         setFullConversation(prev => {
           const updated = prev + ' ' + filteredText;
-          console.log('[App] fullConversation length:', updated.length);
           updateSummary(updated.trim());
-          updateGenre(updated.trim()); // ジャンル推定も更新
+          updateGenre(updated.trim());
           return updated;
-        });
-
-        // 会話欄移動時にGemini整形と固有名詞検出を実行
-        filteredSegments.forEach(segment => {
-          console.log('[App] Calling processText:', segment.trim());
-          processText(segment.trim());
         });
       }
     }
-  }, [transcript, updateSummary, updateGenre, processText]);
+  }, [transcript, updateSummary, updateGenre]);
 
   // 録音開始/停止
   const toggleRecording = () => {
@@ -810,10 +802,23 @@ export default function App() {
           />
         </div>
 
-        {/* リアルタイム欄（話されている文字のみを表示） */}
-        <section className="section realtime-section">
-          <div className={`realtime-text ${isSpeechDetected ? 'active' : ''}`}>
-            {interimTranscript || (isListening ? '' : '会話解析を開始してください')}
+        {/* 状態アイコン表示 */}
+        <section className="section status-section">
+          <div className="status-icon-container">
+            {statusIcon === 'stopped' && (
+              <span className="status-icon stopped" title="停止中">⏹️</span>
+            )}
+            {statusIcon === 'silence' && (
+              <span className="status-icon silence" title="無音（待機中）">🔇</span>
+            )}
+            {statusIcon === 'listening' && (
+              <span className="status-icon listening" title="聞き取り中">🎤</span>
+            )}
+            <span className="status-text">
+              {statusIcon === 'stopped' && '停止中'}
+              {statusIcon === 'silence' && '無音（待機中）'}
+              {statusIcon === 'listening' && '聞き取り中...'}
+            </span>
           </div>
         </section>
 

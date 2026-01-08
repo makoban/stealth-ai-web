@@ -183,30 +183,54 @@
 }
 
 /* リアルタイム欄 - 1行固定 */
-.realtime-section {
+/* 状態アイコン表示 */
+.status-section {
   flex: 0 0 auto;
   background: var(--surface-elevated);
-  padding: 4px 8px;
+  padding: 8px 12px;
 }
 
-.realtime-text {
-  font-size: var(--font-size-large);
-  color: var(--text-secondary);
-  padding: 6px 10px;
+.status-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
   background: white;
   border-radius: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all 0.3s;
-  min-height: 32px;
-  line-height: 32px;
 }
 
-.realtime-text.active {
-  color: var(--success);
+.status-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.status-icon.stopped {
+  opacity: 0.5;
+}
+
+.status-icon.silence {
+  animation: pulse-silence 2s ease-in-out infinite;
+}
+
+.status-icon.listening {
+  animation: pulse-listening 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse-silence {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes pulse-listening {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.status-text {
+  font-size: var(--font-size-base);
+  color: var(--text-secondary);
   font-weight: 500;
-  box-shadow: 0 0 10px rgba(50, 205, 50, 0.3);
 }
 
 /* 会話欄 - 拡大（比率2） */
