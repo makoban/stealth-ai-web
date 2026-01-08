@@ -49,14 +49,7 @@
   white-space: nowrap;
 }
 
-.connection-indicator {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid white;
-  transition: background-color 0.3s;
-  flex-shrink: 0;
-}
+/* connection-indicatorは削除済み */
 
 /* リスニングステータスアイコン */
 .listen-status-icon {
@@ -99,9 +92,10 @@
 .header-right {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 4px;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .points-badge {

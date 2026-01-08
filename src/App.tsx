@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.29.0';
+const APP_VERSION = 'v3.30.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -217,7 +217,7 @@ export default function App() {
   const isListening = whisper.isListening;
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
-  const isSpeechDetected = whisper.isSpeechDetected;
+  // isSpeechDetectedは音量バーに置き換えたため削除
   // statusIconは音量バーに置き換えたため削除
   const isSupported = true;
   const speechError = whisper.error;
@@ -736,12 +736,6 @@ export default function App() {
     localStorage.removeItem('stealth_full_memory_path');
   };
 
-  // 接続状態の色
-  const getConnectionColor = () => {
-    if (!isListening) return '#999';
-    return isSpeechDetected ? '#32CD32' : '#FF6B6B';
-  };
-
   if (!isSupported) {
     return (
       <div className="app unsupported">
@@ -763,13 +757,9 @@ export default function App() {
             onClick={() => alert(`${APP_NAME} ${APP_VERSION}`)}
             title={`${APP_NAME} ${APP_VERSION}`}
           >
-            🌟 K+
+            KUROKO+
           </h1>
-          <div
-            className="connection-indicator"
-            style={{ backgroundColor: getConnectionColor() }}
-          />
-          {/* テーマ切り替えアイコン（タップで順次切り替え） */}
+          {/* テーマ切り替えアイコン */}
           <button
             className="icon-btn theme-icon-btn"
             onClick={() => {
@@ -778,11 +768,11 @@ export default function App() {
               const nextIndex = (currentIndex + 1) % themes.length;
               setColorTheme(themes[nextIndex]);
             }}
-            title={`テーマ: ${THEME_LABELS[colorTheme]}（タップで切り替え）`}
+            title={`テーマ: ${THEME_LABELS[colorTheme]}`}
           >
             🎨
           </button>
-          {/* 文字サイズ切り替えアイコン（タップで順次切り替え） */}
+          {/* 文字サイズ切り替えアイコン */}
           <button
             className="icon-btn fontsize-icon-btn"
             onClick={() => {
@@ -791,19 +781,20 @@ export default function App() {
               const nextIndex = (currentIndex + 1) % sizes.length;
               setFontSize(sizes[nextIndex]);
             }}
-            title={`文字サイズ: ${FONTSIZE_LABELS[fontSize]}（タップで切り替え）`}
+            title={`文字サイズ: ${FONTSIZE_LABELS[fontSize]}`}
           >
             🔤
           </button>
         </div>
         <div className="header-right">
-          {/* 音量レベルバー（10本） */}
+          {/* 音量レベルバー（5本、0.5-1.0範囲） */}
           <div className="audio-level-bars">
-            {[...Array(10)].map((_, i) => {
-              const threshold = i / 10;
+            {[...Array(5)].map((_, i) => {
+              // 0.5-1.0の範囲を0.1刻みで表示
+              const threshold = 0.5 + (i * 0.1);
               const isActive = audioLevel > threshold;
-              // 左（0）が青、右（1.0）が赤のグラデーション
-              const hue = 240 - (i * 24); // 240(青) → 0(赤)
+              // 左（0.5）が青、右（1.0）が赤のグラデーション
+              const hue = 240 - (i * 48); // 240(青) → 48(オレンジ) → 0(赤)
               return (
                 <div
                   key={i}
