@@ -243,6 +243,11 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       // 無音が続いたらVADタイマー開始
       const silenceDuration = Date.now() - lastSpeechTimeRef.current;
       
+      // デバッグ: 無音時の状態を確認（頻度を減らす）
+      if (silenceDuration > 100 && silenceDuration < 600 && !vadTimerRef.current) {
+        log('VAD', `Silence check: duration=${silenceDuration}ms, threshold=${VAD_SILENCE_DURATION}ms, timer=${!!vadTimerRef.current}, recorder=${!!recorderRef.current}`);
+      }
+      
       if (silenceDuration >= VAD_SILENCE_DURATION && !vadTimerRef.current && recorderRef.current) {
         log('VAD', `Silence duration: ${silenceDuration}ms, starting timer`);
         vadTimerRef.current = setTimeout(() => {
