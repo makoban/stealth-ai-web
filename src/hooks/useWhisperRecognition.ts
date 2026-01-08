@@ -55,7 +55,7 @@ function isHallucination(text: string): boolean {
 const CALIBRATION_DURATION = 2000; // 2秒間測定
 const TARGET_NOISE_LEVEL = 0.3; // 目標ノイズレベル（キャリブレーション後）
 const MIN_GAIN = 10;
-const MAX_GAIN = 100;
+const MAX_GAIN = 500; // iPhone/Chromeなど低感度環境対応
 const DEFAULT_GAIN = 50;
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {

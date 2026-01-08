@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.31.1';
+const APP_VERSION = 'v3.32.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -1054,8 +1054,8 @@ export default function App() {
               <input
                 type="range"
                 min="10"
-                max="100"
-                step="5"
+                max="500"
+                step="10"
                 value={currentGain}
                 onChange={(e) => {
                   const newGain = parseInt(e.target.value, 10);
@@ -1065,27 +1065,33 @@ export default function App() {
               />
               <div className="gain-labels">
                 <span>低 (10x)</span>
-                <span>高 (100x)</span>
+                <span>高 (500x)</span>
               </div>
             </div>
             <div className="gain-presets">
               <button 
-                className={`gain-preset ${currentGain <= 30 ? 'active' : ''}`}
-                onClick={() => setGain(20)}
+                className={`gain-preset ${currentGain <= 50 ? 'active' : ''}`}
+                onClick={() => setGain(30)}
               >
-                📱 PC向け
+                💻 PC
               </button>
               <button 
-                className={`gain-preset ${currentGain > 30 && currentGain <= 60 ? 'active' : ''}`}
-                onClick={() => setGain(50)}
+                className={`gain-preset ${currentGain > 50 && currentGain <= 150 ? 'active' : ''}`}
+                onClick={() => setGain(100)}
               >
                 ⚖️ 標準
               </button>
               <button 
-                className={`gain-preset ${currentGain > 60 ? 'active' : ''}`}
-                onClick={() => setGain(80)}
+                className={`gain-preset ${currentGain > 150 && currentGain <= 300 ? 'active' : ''}`}
+                onClick={() => setGain(200)}
               >
-                📱 スマホ向け
+                📱 スマホ
+              </button>
+              <button 
+                className={`gain-preset ${currentGain > 300 ? 'active' : ''}`}
+                onClick={() => setGain(400)}
+              >
+                📱 iPhone
               </button>
             </div>
             <button onClick={() => setShowGainAdjuster(false)}>閉じる</button>
