@@ -135,7 +135,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   }, []);
 
   // ===== Whisper①: リアルタイム用（1.5秒固定） =====
-  // リアルタイム用はバッファをクリアしない（会話用Whisper②のために残す）
+  // 表示用バッファを取得してクリア（会話用バッファは別管理）
   const sendRealtimeWhisper = useCallback(async () => {
     if (!recorderRef.current || realtimeProcessingRef.current || !recorderRef.current.isRecording()) {
       return;
@@ -144,15 +144,16 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     const maxLevel = realtimeAudioLevelRef.current;
     realtimeAudioLevelRef.current = 0;
     
+    // 表示用バッファを取得（クリアされる）
+    const blob = recorderRef.current.getRealtimeBlob();
+    
     // バンドパスフィルタ後の音声レベルで判定（人の声がない場合は送信しない）
     if (maxLevel < silenceThreshold) {
       log('REALTIME', `No voice detected (level: ${maxLevel.toFixed(3)}), skipping`);
-      // バッファはクリアしない（会話用のために残す）
       return;
     }
 
-    // コピーを取得（バッファはクリアしない）
-    const blob = recorderRef.current.getIntermediateBlobCopy();
+    // blobは既に取得済み
     
     if (!blob || blob.size < 1000) {
       return;
@@ -244,7 +245,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           
           // VAD終了: 会話用Whisper②に送信
           if (recorderRef.current && recorderRef.current.isRecording()) {
-            const blob = recorderRef.current.getIntermediateBlob();
+            const blob = recorderRef.current.getConversationBlob();
             if (blob && blob.size > 1000) {
               log('VAD', `Silence detected (${silenceDuration}ms), sending to Whisper②`);
               sendConversationWhisper(blob);

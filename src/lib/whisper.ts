@@ -142,7 +142,9 @@ export class AudioRecorder {
   private scriptProcessor: ScriptProcessorNode | null = null;
   private onAudioLevelCallback: ((level: number, isClipping: boolean) => void) | null = null;
   private animationFrameId: number | null = null;
-  private audioData: Float32Array[] = [];
+  // 2つのバッファ（表示用・会話用）
+  private realtimeBuffer: Float32Array[] = [];  // 表示用（1.5秒でカット）
+  private conversationBuffer: Float32Array[] = [];  // 会話用（VADでカット）
   private isRecordingFlag: boolean = false;
   private sampleRate: number = 48000;
 
@@ -160,7 +162,8 @@ export class AudioRecorder {
 
   async start(onAudioLevel?: (level: number, isClipping: boolean) => void): Promise<void> {
     this.onAudioLevelCallback = onAudioLevel || null;
-    this.audioData = [];
+    this.realtimeBuffer = [];
+    this.conversationBuffer = [];
     this.isRecordingFlag = true;
     this.clippingCount = 0;
 
@@ -231,10 +234,14 @@ export class AudioRecorder {
         }
       }
 
-      // データをコピーして保存
-      const copy = new Float32Array(inputData.length);
-      copy.set(inputData);
-      this.audioData.push(copy);
+      // データをコピーして両方のバッファに保存
+      const copyRealtime = new Float32Array(inputData.length);
+      copyRealtime.set(inputData);
+      this.realtimeBuffer.push(copyRealtime);
+      
+      const copyConversation = new Float32Array(inputData.length);
+      copyConversation.set(inputData);
+      this.conversationBuffer.push(copyConversation);
     };
 
     // 接続チェーン:
@@ -309,41 +316,48 @@ export class AudioRecorder {
     this.compressor = null;
     this.onAudioLevelCallback = null;
 
-    // 録音データをWAVに変換
-    if (this.audioData.length > 0) {
-      const blob = this.createWavBlob();
+    // 録音データをWAVに変換（会話用バッファを返す）
+    if (this.conversationBuffer.length > 0) {
+      const blob = this.createWavBlobFromBuffer(this.conversationBuffer);
       console.log('[AudioRecorder] Stopped. Clipping events:', this.clippingCount);
-      this.audioData = [];
+      this.realtimeBuffer = [];
+      this.conversationBuffer = [];
       return blob;
     }
     return null;
   }
 
-  // 現在までの録音データを取得（録音は継続、データをクリア）
+  // 表示用バッファを取得してクリア（1.5秒ごとに呼ばれる）
+  getRealtimeBlob(): Blob | null {
+    if (this.realtimeBuffer.length > 0) {
+      const blob = this.createWavBlobFromBuffer(this.realtimeBuffer);
+      this.realtimeBuffer = [];  // 表示用バッファのみクリア
+      return blob;
+    }
+    return null;
+  }
+
+  // 会話用バッファを取得してクリア（VADで呼ばれる）
+  getConversationBlob(): Blob | null {
+    if (this.conversationBuffer.length > 0) {
+      const blob = this.createWavBlobFromBuffer(this.conversationBuffer);
+      this.conversationBuffer = [];  // 会話用バッファのみクリア
+      return blob;
+    }
+    return null;
+  }
+
+  // 後方互換性のため残す（会話用バッファを返す）
   getIntermediateBlob(): Blob | null {
-    if (this.audioData.length > 0) {
-      const blob = this.createWavBlob();
-      this.audioData = []; // データをクリア
-      return blob;
-    }
-    return null;
+    return this.getConversationBlob();
   }
 
-  // 現在までの録音データをコピーして取得（録音は継続、データはクリアしない）
-  getIntermediateBlobCopy(): Blob | null {
-    if (this.audioData.length > 0) {
-      return this.createWavBlob();
-      // データはクリアしない
-    }
-    return null;
-  }
-
-  private createWavBlob(): Blob {
+  private createWavBlobFromBuffer(buffer: Float32Array[]): Blob {
     // 全てのチャンクを結合
-    const totalLength = this.audioData.reduce((sum, chunk) => sum + chunk.length, 0);
+    const totalLength = buffer.reduce((sum, chunk) => sum + chunk.length, 0);
     const combined = new Float32Array(totalLength);
     let offset = 0;
-    for (const chunk of this.audioData) {
+    for (const chunk of buffer) {
       combined.set(chunk, offset);
       offset += chunk.length;
     }
