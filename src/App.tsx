@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.35.0';
+const APP_VERSION = 'v3.35.1';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -1079,7 +1079,7 @@ export default function App() {
                 <span>ノイズフロア: </span>
                 <span className="noise-floor-value">{(noiseFloor * 100).toFixed(1)}%</span>
                 <span className="threshold-info">
-                  (開始: {(noiseFloor * 3.5 * 100).toFixed(0)}% / 終了: {(noiseFloor * 1.8 * 100).toFixed(0)}%)
+                  (開始: {(noiseFloor * 2.5 * 100).toFixed(0)}% / 終了: {(noiseFloor * 1.5 * 100).toFixed(0)}%)
                 </span>
               </div>
             </div>

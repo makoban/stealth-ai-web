@@ -181,13 +181,13 @@ export class AudioRecorder {
   private vadStateStartTime: number = 0;
   
   // ノイズフロア推定パラメータ
-  private readonly NOISE_FLOOR_RISE_RATE = 0.01;  // 上昇時はゆっくり
-  private readonly NOISE_FLOOR_MIN = 0.001;       // 最小ノイズフロア
-  private readonly NOISE_FLOOR_MAX = 0.3;         // 最大ノイズフロア
+  private readonly NOISE_FLOOR_RISE_RATE = 0.002;  // 上昇時は非常にゆっくり（0.01→0.002）
+  private readonly NOISE_FLOOR_MIN = 0.001;        // 最小ノイズフロア
+  private readonly NOISE_FLOOR_MAX = 0.08;         // 最大ノイズフロア（0.3→0.08）
   
   // ヒステリシスVADパラメータ
-  private readonly VAD_ON_MULTIPLIER = 3.5;   // 発話開始閾値 = noiseFloor * 3.5
-  private readonly VAD_OFF_MULTIPLIER = 1.8;  // 発話終了閾値 = noiseFloor * 1.8
+  private readonly VAD_ON_MULTIPLIER = 2.5;   // 発話開始閾値 = noiseFloor * 2.5（3.5→2.5）
+  private readonly VAD_OFF_MULTIPLIER = 1.5;  // 発話終了閾値 = noiseFloor * 1.5（1.8→1.5）
   private readonly VAD_MAYBE_SPEECH_DURATION = 50;   // maybe_speech → speech (ms)
   private readonly VAD_MAYBE_SILENCE_DURATION = 200; // maybe_silence → silence (ms)
 
