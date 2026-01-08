@@ -201,6 +201,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   }, [updateDisplay]);
 
   // VAD処理
+  // 無音検出デバッグ用
+  const lastSilenceLogRef = useRef<number>(0);
+  
   const handleVAD = useCallback((level: number) => {
     const isSpeaking = level > VAD_SPEECH_THRESHOLD;
     setIsSpeechDetected(isSpeaking);
@@ -216,7 +219,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         vadTimerRef.current = null;
       }
     } else {
-      // 無音
+      // 無音検出 - デバッグログ（1秒に1回）
+      const now = Date.now();
+      if (now - lastSilenceLogRef.current > 1000) {
+        lastSilenceLogRef.current = now;
+        const silenceDuration = lastSpeechTimeRef.current > 0 ? now - lastSpeechTimeRef.current : 0;
+        log('SILENCE', `level=${level.toFixed(4)}, hasSpeech=${hasSpeechRef.current}, silenceDuration=${silenceDuration}ms`);
+      }
+      
       // 音声があった後の無音のみ処理
       if (hasSpeechRef.current && lastSpeechTimeRef.current > 0) {
         const silenceDuration = Date.now() - lastSpeechTimeRef.current;
