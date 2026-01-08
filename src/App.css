@@ -137,6 +137,25 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* 知識レベルボタン（大きい文字） */
+.level-btn-large {
+  background: rgba(255, 255, 255, 0.25);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.level-btn-large:hover {
+  background: rgba(255, 255, 255, 0.35);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
 /* メインコンテンツ */
 .main-content {
   flex: 1;
@@ -233,7 +252,64 @@
   font-weight: 500;
 }
 
-/* 会話欄 - 拡大（比率2） */
+/* 状態バッジ（3文字表示） */
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 8px;
+  transition: all 0.3s ease;
+}
+
+.status-badge.stopped {
+  background: #9e9e9e;
+  color: white;
+}
+
+.status-badge.silence {
+  background: #2196f3;
+  color: white;
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+.status-badge.speaking {
+  background: #4caf50;
+  color: white;
+  animation: pulse-badge-fast 0.5s ease-in-out infinite;
+}
+
+.status-badge.sending {
+  background: #ff9800;
+  color: white;
+}
+
+@keyframes pulse-badge {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+@keyframes pulse-badge-fast {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.section h2 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-title {
+  flex-shrink: 0;
+}
+
+.expand-icon {
+  margin-left: auto;
+}
+
+/* 会話欄 - 拡大（比率２） */
 .conversation-section {
   flex: 2;
   min-height: 80px;

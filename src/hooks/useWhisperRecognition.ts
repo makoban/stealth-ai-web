@@ -3,8 +3,8 @@ import { AudioRecorder, transcribeAudio } from '../lib/whisper';
 
 export type RecognitionState = 'idle' | 'starting' | 'listening' | 'processing' | 'stopping';
 
-// 状態アイコン
-export type StatusIcon = 'stopped' | 'silence' | 'listening';
+// 状態アイコン（3文字表示）
+export type StatusIcon = 'stopped' | 'silence' | 'speaking' | 'sending';
 
 export interface UseWhisperRecognitionOptions {
   intervalMs?: number;
@@ -182,7 +182,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     
     // 状態アイコンを更新
     if (isSpeaking) {
-      setStatusIcon('listening');
+      setStatusIcon('speaking');
     } else {
       setStatusIcon('silence');
     }
@@ -242,6 +242,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         
         if (silenceDuration >= VAD_SILENCE_DURATION && !vadTimerRef.current) {
           log('VAD_TRIGGER', `Silence ${silenceDuration}ms >= ${VAD_SILENCE_DURATION}ms, triggering Whisper`);
+          
+          // 区切りアイコンを表示
+          setStatusIcon('sending');
           
           // VADタイマー発火
           vadTimerRef.current = setTimeout(() => {

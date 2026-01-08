@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.25.0';
+const APP_VERSION = 'v3.26.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -172,7 +172,7 @@ export default function App() {
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
   const isSpeechDetected = whisper.isSpeechDetected;
-  // statusIconは削除済み（アイコン表示欄を削除）
+  const statusIcon = whisper.statusIcon;
   const isSupported = true;
   const speechError = whisper.error;
 
@@ -751,8 +751,6 @@ export default function App() {
           </button>
         </div>
         <div className="header-right">
-          <UserMenu />
-
           {currentGenre && currentGenre.confidence > 0.5 && (
             <span className="genre-badge" title={`大カテゴリ: ${currentGenre.primary}\nキーワード: ${currentGenre.keywords.join(', ')}\n${currentGenre.context}`}>
               🎯 {currentGenre.detailedGenre || currentGenre.primary}
@@ -762,9 +760,10 @@ export default function App() {
           {isDetectingGenre && (
             <span className="genre-badge detecting">🔍 分析中...</span>
           )}
-          <button onClick={() => setShowLevelSelector(true)} className="level-btn">
+          <button onClick={() => setShowLevelSelector(true)} className="level-btn-large">
             📚 {KNOWLEDGE_LEVEL_LABELS[knowledgeLevel]}
           </button>
+          <UserMenu />
           {isListening && (
             <div className="header-audio-level">
               <div className="header-level-bar" style={{ width: `${Math.min(audioLevel * 100 * 2, 100)}%` }} />
@@ -808,7 +807,16 @@ export default function App() {
             className={`section conversation-section ${expandedSection === 'conversation' ? 'expanded' : ''}`}
             onClick={() => toggleSection('conversation')}
           >
-            <h2>💬 会話 {expandedSection === 'conversation' ? '▼' : '▶'}</h2>
+            <h2>
+              <span className="section-title">💬 会話</span>
+              <span className={`status-badge ${statusIcon}`}>
+                {statusIcon === 'stopped' && '停止中'}
+                {statusIcon === 'silence' && '無音中'}
+                {statusIcon === 'speaking' && '発声中'}
+                {statusIcon === 'sending' && '区切り'}
+              </span>
+              <span className="expand-icon">{expandedSection === 'conversation' ? '▼' : '▶'}</span>
+            </h2>
             <div className="section-content">
               {conversations.length === 0 ? (
                 <p className="placeholder">会話がここに表示されます</p>
