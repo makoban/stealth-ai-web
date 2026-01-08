@@ -76,7 +76,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const vadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSpeechRef = useRef<boolean>(false);
   const VAD_SPEECH_THRESHOLD = 0.5;
-  const VAD_SILENCE_DURATION = 400; // 0.4秒無音でWhisper送信
+  const VAD_SILENCE_DURATION = 200; // 0.2秒無音でWhisper送信
   
   // 最大蓄積時間用（連続音声対応）
   const recordingStartTimeRef = useRef<number>(0);

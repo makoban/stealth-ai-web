@@ -984,7 +984,7 @@ ${detectedHint}
 // Whisper用のプロンプトを構築（動的プロンプト: 要約内容と予測単語を含む）
 export function buildWhisperPrompt(
   teachContent: string,
-  genreKeywords: string,
+  _genreKeywords: string,  // 未使用（幻覚防止のため無効化）
   detectedNouns: string[],
   _summaryContext?: string,     // 要約内容（将来の拡張用、現在は未使用）
   predictedWords?: string[],    // 予測単語（動的プロンプト）
@@ -1014,10 +1014,12 @@ export function buildWhisperPrompt(
     }
   }
   
-  // 4. ジャンル別キーワード
-  if (genreKeywords && genreKeywords.trim()) {
-    parts.push(genreKeywords.slice(0, 150));
-  }
+  // 4. ジャンル別キーワード（幻覚防止のため無効化）
+  // Whisperはプロンプトに含まれる単語を誤認識しやすいため、
+  // ジャンルキーワードは除外する
+  // if (genreKeywords && genreKeywords.trim()) {
+  //   parts.push(genreKeywords.slice(0, 150));
+  // }
   
   // 5. 既に検出された固有名詞
   if (detectedNouns.length > 0) {

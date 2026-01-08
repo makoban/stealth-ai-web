@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.23.0';
+const APP_VERSION = 'v3.24.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -172,7 +172,7 @@ export default function App() {
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
   const isSpeechDetected = whisper.isSpeechDetected;
-  const statusIcon = whisper.statusIcon;
+  // statusIconは削除済み（アイコン表示欄を削除）
   const isSupported = true;
   const speechError = whisper.error;
 
@@ -801,26 +801,6 @@ export default function App() {
             fullContent={fullMemoryContent}
           />
         </div>
-
-        {/* 状態アイコン表示 */}
-        <section className="section status-section">
-          <div className="status-icon-container">
-            {statusIcon === 'stopped' && (
-              <span className="status-icon stopped" title="停止中">⏹️</span>
-            )}
-            {statusIcon === 'silence' && (
-              <span className="status-icon silence" title="無音（待機中）">🔇</span>
-            )}
-            {statusIcon === 'listening' && (
-              <span className="status-icon listening" title="聞き取り中">🎤</span>
-            )}
-            <span className="status-text">
-              {statusIcon === 'stopped' && '停止中'}
-              {statusIcon === 'silence' && '無音（待機中）'}
-              {statusIcon === 'listening' && '聞き取り中...'}
-            </span>
-          </div>
-        </section>
 
         {/* 会話欄（Gemini整形後のテキスト） */}
         {(expandedSection === 'none' || expandedSection === 'conversation') && (
