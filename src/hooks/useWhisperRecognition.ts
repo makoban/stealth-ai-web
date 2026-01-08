@@ -89,11 +89,16 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const maxCharsRef = useRef<number>(20);
   
   // VAD用
-  const lastSpeechTimeRef = useRef<number>(0); // 0で初期化（開始直後の誤発火防止）
+  const lastSpeechTimeRef = useRef<number>(0);
   const vadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasSpeechRef = useRef<boolean>(false); // 音声があったかどうか
+  const hasSpeechRef = useRef<boolean>(false);
   const VAD_SPEECH_THRESHOLD = 0.015;
   const VAD_SILENCE_DURATION = 400; // 0.4秒無音でWhisper送信
+  
+  // 最大蓄積時間用（連続音声対応）
+  const recordingStartTimeRef = useRef<number>(0);
+  const MAX_RECORDING_DURATION = 10000; // 10秒で強制送信
+  const maxDurationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   const whisperPromptRef = useRef<string>(whisperPrompt);
   const onBufferReadyRef = useRef(onBufferReady);
@@ -137,23 +142,26 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // VAD発火時にWhisper送信
-  const sendToWhisper = useCallback(async () => {
+  // Whisper送信（VAD発火時 or 最大時間到達時）
+  const sendToWhisper = useCallback(async (reason: string) => {
     if (!recorderRef.current || isProcessingRef.current || !recorderRef.current.isRecording()) {
-      log('VAD', 'Skipping - recorder not ready or processing');
+      log('WHISPER', `Skipping (${reason}) - recorder not ready or processing`);
       return;
     }
 
     const blob = recorderRef.current.getIntermediateBlob();
     
     if (!blob || blob.size < 1000) {
-      log('VAD', `Blob too small: ${blob?.size || 0}`);
+      log('WHISPER', `Skipping (${reason}) - blob too small: ${blob?.size || 0}`);
       return;
     }
 
-    log('VAD', `Sending blob: ${blob.size} bytes`);
+    log('WHISPER', `Sending (${reason}): ${blob.size} bytes`);
     isProcessingRef.current = true;
     setProcessingStatus('Whisper送信中...');
+    
+    // 録音開始時間をリセット（次の10秒カウント用）
+    recordingStartTimeRef.current = Date.now();
 
     try {
       const result = await transcribeAudio(blob, whisperPromptRef.current);
@@ -219,9 +227,9 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
           // VADタイマー発火
           vadTimerRef.current = setTimeout(() => {
             vadTimerRef.current = null;
-            hasSpeechRef.current = false; // リセット
-            sendToWhisper();
-          }, 50); // 少し待ってから送信
+            hasSpeechRef.current = false;
+            sendToWhisper('VAD');
+          }, 50);
         }
       }
     }
@@ -250,6 +258,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     displayTextRef.current = '';
     lastSpeechTimeRef.current = 0;
     hasSpeechRef.current = false;
+    recordingStartTimeRef.current = Date.now();
     
     // 最大文字数を計算
     maxCharsRef.current = calculateMaxChars();
@@ -271,6 +280,18 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setState('listening');
       setProcessingStatus('解析中');
       
+      // 最大蓄積時間チェック（1秒ごと）
+      maxDurationTimerRef.current = setInterval(() => {
+        if (hasSpeechRef.current && recordingStartTimeRef.current > 0) {
+          const elapsed = Date.now() - recordingStartTimeRef.current;
+          if (elapsed >= MAX_RECORDING_DURATION && !isProcessingRef.current) {
+            log('MAX_DURATION', `${elapsed}ms elapsed, forcing Whisper send`);
+            hasSpeechRef.current = false;
+            sendToWhisper('MAX_DURATION');
+          }
+        }
+      }, 1000);
+      
       log('START', 'VAD listening started');
 
     } catch (e) {
@@ -278,16 +299,20 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       setError('マイクの使用が許可されていません');
       setState('idle');
     }
-  }, [isSupported, currentGain, handleVAD]);
+  }, [isSupported, currentGain, handleVAD, sendToWhisper]);
 
   const stopListening = useCallback(async () => {
     log('STOP', 'Stopping...');
     setState('stopping');
 
-    // VADタイマークリア
+    // タイマークリア
     if (vadTimerRef.current) {
       clearTimeout(vadTimerRef.current);
       vadTimerRef.current = null;
+    }
+    if (maxDurationTimerRef.current) {
+      clearInterval(maxDurationTimerRef.current);
+      maxDurationTimerRef.current = null;
     }
     
     displayTextRef.current = '';
@@ -335,6 +360,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   useEffect(() => {
     return () => {
       if (vadTimerRef.current) clearTimeout(vadTimerRef.current);
+      if (maxDurationTimerRef.current) clearInterval(maxDurationTimerRef.current);
       if (recorderRef.current) recorderRef.current.stop();
     };
   }, []);
