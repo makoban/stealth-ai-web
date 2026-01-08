@@ -80,13 +80,15 @@ export async function transcribeAudio(
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.wav');
   
-  // プロンプトがあれば追加（固有名詞の認識精度向上）
-  if (prompt && prompt.trim()) {
-    // Whisperのプロンプトは最大224トークンなので、約400文字に制限
-    const truncatedPrompt = prompt.trim().slice(0, 400);
-    formData.append('prompt', truncatedPrompt);
-    console.log('[Whisper] Using prompt:', truncatedPrompt.slice(0, 100) + '...');
-  }
+  // プロンプトは完全に無効化（幻覚防止）
+  // Whisperはプロンプトに含まれる単語を誤認識しやすいため、
+  // プロンプト機能を無効化して幻覚を防止する
+  // if (prompt && prompt.trim()) {
+  //   const truncatedPrompt = prompt.trim().slice(0, 400);
+  //   formData.append('prompt', truncatedPrompt);
+  //   console.log('[Whisper] Using prompt:', truncatedPrompt.slice(0, 100) + '...');
+  // }
+  console.log('[Whisper] Prompt disabled to prevent hallucination');
 
   // 認証トークンを取得
   const headers: HeadersInit = {};
