@@ -137,6 +137,38 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* ヘッダー用状態バッジ */
+.header-status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.header-status-badge.stopped {
+  background: rgba(158, 158, 158, 0.8);
+  color: white;
+}
+
+.header-status-badge.silence {
+  background: rgba(33, 150, 243, 0.8);
+  color: white;
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+.header-status-badge.speaking {
+  background: rgba(76, 175, 80, 0.9);
+  color: white;
+  animation: pulse-badge-fast 0.5s ease-in-out infinite;
+}
+
+.header-status-badge.sending {
+  background: rgba(255, 152, 0, 0.9);
+  color: white;
+}
+
 /* 知識レベルボタン（大きい文字） */
 .level-btn-large {
   background: rgba(255, 255, 255, 0.25);
@@ -309,10 +341,10 @@
   margin-left: auto;
 }
 
-/* 会話欄 - 拡大（比率２） */
+/* 会話欄 - 拡大（比率３） */
 .conversation-section {
-  flex: 2;
-  min-height: 80px;
+  flex: 3;
+  min-height: 100px;
 }
 
 .conversation-entry {
@@ -341,10 +373,11 @@
   margin-top: 4px;
 }
 
-/* 要約欄 - 比率2 */
+/* 要約欄 - 比率１（１行のみ） */
 .summary-section {
-  flex: 2;
-  min-height: 80px;
+  flex: 1;
+  min-height: 40px;
+  max-height: 80px;
 }
 
 .summary-entry {
@@ -375,10 +408,10 @@
   font-size: var(--font-size-small);
 }
 
-/* 調べた単語欄 - 比率4 */
+/* 調べた単語欄 - 拡大（比率５） */
 .lookup-section {
-  flex: 4;
-  min-height: 120px;
+  flex: 5;
+  min-height: 150px;
 }
 
 .lookup-entry {
