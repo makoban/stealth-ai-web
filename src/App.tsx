@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.31.0';
+const APP_VERSION = 'v3.31.1';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -191,6 +191,7 @@ export default function App() {
   const [gainValue, setGainValue] = useState<number>(50);
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showGainAdjuster, setShowGainAdjuster] = useState(false);
 
   // Whisperプロンプト用（フック使用前に定義が必要）
   const [whisperPrompt, setWhisperPrompt] = useState<string>('');
@@ -797,8 +798,12 @@ export default function App() {
               <span className="calibration-text">調整中</span>
             </div>
           ) : (
-            /* 音量レベルバー（5本） */
-            <div className="audio-level-bars" title={`ゲイン: ${currentGain}x`}>
+            /* 音量レベルバー（5本）- タップでゲイン調整 */
+            <div 
+              className="audio-level-bars clickable" 
+              title={`ゲイン: ${currentGain}x (タップで調整)`}
+              onClick={() => setShowGainAdjuster(true)}
+            >
               {[0.5, 0.55, 0.6, 0.65, 0.7].map((threshold, i) => {
                 const isActive = audioLevel > threshold;
                 // 左（0.5）が青、右（0.7+）が赤のグラデーション
@@ -1029,6 +1034,61 @@ export default function App() {
               </div>
             </div>
             <button onClick={() => setShowSettings(false)}>閉じる</button>
+          </div>
+        </div>
+      )}
+
+      {/* ゲイン調整モーダル */}
+      {showGainAdjuster && (
+        <div className="modal-overlay" onClick={() => setShowGainAdjuster(false)}>
+          <div className="modal gain-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>🎙️ マイクゲイン調整</h2>
+            <p className="gain-description">
+              マイクの感度を調整します。<br />
+              起動時に自動調整されますが、手動で変更も可能です。
+            </p>
+            <div className="gain-slider-container">
+              <div className="gain-value-display">
+                <span className="gain-value">{currentGain}x</span>
+              </div>
+              <input
+                type="range"
+                min="10"
+                max="100"
+                step="5"
+                value={currentGain}
+                onChange={(e) => {
+                  const newGain = parseInt(e.target.value, 10);
+                  setGain(newGain);
+                }}
+                className="gain-slider"
+              />
+              <div className="gain-labels">
+                <span>低 (10x)</span>
+                <span>高 (100x)</span>
+              </div>
+            </div>
+            <div className="gain-presets">
+              <button 
+                className={`gain-preset ${currentGain <= 30 ? 'active' : ''}`}
+                onClick={() => setGain(20)}
+              >
+                📱 PC向け
+              </button>
+              <button 
+                className={`gain-preset ${currentGain > 30 && currentGain <= 60 ? 'active' : ''}`}
+                onClick={() => setGain(50)}
+              >
+                ⚖️ 標準
+              </button>
+              <button 
+                className={`gain-preset ${currentGain > 60 ? 'active' : ''}`}
+                onClick={() => setGain(80)}
+              >
+                📱 スマホ向け
+              </button>
+            </div>
+            <button onClick={() => setShowGainAdjuster(false)}>閉じる</button>
           </div>
         </div>
       )}
