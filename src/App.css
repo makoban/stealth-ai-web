@@ -696,6 +696,38 @@
   font-weight: 600;
 }
 
+/* 自動調整ボタン */
+.auto-adjust-btn {
+  width: 100%;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.auto-adjust-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.auto-adjust-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.auto-adjust-btn:disabled {
+  background: var(--border);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 /* クリック可能な音量レベルバー */
 .audio-level-bars.clickable {
   cursor: pointer;

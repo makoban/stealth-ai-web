@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.32.0';
+const APP_VERSION = 'v3.33.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -269,6 +269,7 @@ export default function App() {
   }, [whisper]);
 
   const setGain = whisper.setGain;
+  const autoAdjustGain = whisper.autoAdjustGain;
 
   const [knowledgeLevel, setKnowledgeLevel] = useState<KnowledgeLevel>('high');
   
@@ -1045,8 +1046,20 @@ export default function App() {
             <h2>🎙️ マイクゲイン調整</h2>
             <p className="gain-description">
               マイクの感度を調整します。<br />
-              起動時に自動調整されますが、手動で変更も可能です。
+              「自動調整」で現在の音量に合わせて最適化します。
             </p>
+            
+            {/* 自動調整ボタン */}
+            <button 
+              className="auto-adjust-btn"
+              onClick={() => {
+                autoAdjustGain();
+              }}
+              disabled={!isListening}
+            >
+              🎯 自動調整（現在の音量: {(audioLevel * 100).toFixed(0)}%）
+            </button>
+            
             <div className="gain-slider-container">
               <div className="gain-value-display">
                 <span className="gain-value">{currentGain}x</span>
@@ -1054,9 +1067,9 @@ export default function App() {
               <input
                 type="range"
                 min="10"
-                max="500"
+                max="10000"
                 step="10"
-                value={currentGain}
+                value={Math.min(currentGain, 10000)}
                 onChange={(e) => {
                   const newGain = parseInt(e.target.value, 10);
                   setGain(newGain);
@@ -1065,7 +1078,7 @@ export default function App() {
               />
               <div className="gain-labels">
                 <span>低 (10x)</span>
-                <span>高 (500x)</span>
+                <span>高 (10,000x)</span>
               </div>
             </div>
             <div className="gain-presets">
@@ -1076,20 +1089,20 @@ export default function App() {
                 💻 PC
               </button>
               <button 
-                className={`gain-preset ${currentGain > 50 && currentGain <= 150 ? 'active' : ''}`}
+                className={`gain-preset ${currentGain > 50 && currentGain <= 200 ? 'active' : ''}`}
                 onClick={() => setGain(100)}
               >
                 ⚖️ 標準
               </button>
               <button 
-                className={`gain-preset ${currentGain > 150 && currentGain <= 300 ? 'active' : ''}`}
-                onClick={() => setGain(200)}
+                className={`gain-preset ${currentGain > 200 && currentGain <= 1000 ? 'active' : ''}`}
+                onClick={() => setGain(500)}
               >
                 📱 スマホ
               </button>
               <button 
-                className={`gain-preset ${currentGain > 300 ? 'active' : ''}`}
-                onClick={() => setGain(400)}
+                className={`gain-preset ${currentGain > 1000 ? 'active' : ''}`}
+                onClick={() => setGain(2000)}
               >
                 📱 iPhone
               </button>

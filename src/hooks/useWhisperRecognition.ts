@@ -55,7 +55,7 @@ function isHallucination(text: string): boolean {
 const CALIBRATION_DURATION = 2000; // 2秒間測定
 const TARGET_NOISE_LEVEL = 0.3; // 目標ノイズレベル（キャリブレーション後）
 const MIN_GAIN = 10;
-const MAX_GAIN = 500; // iPhone/Chromeなど低感度環境対応
+const MAX_GAIN = 10000; // コンプレッサーで音割れ防止、上限なし
 const DEFAULT_GAIN = 50;
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
@@ -475,6 +475,42 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setTranscript('');
   }, []);
 
+  // リアルタイム自動ゲイン調整（現在の音量から0.65になるよう調整）
+  const autoAdjustGain = useCallback(() => {
+    const currentLevel = audioLevel;
+    const targetLevel = 0.65;
+    
+    if (currentLevel < 0.01) {
+      // 音量がほぼ0の場合は最大ゲインに
+      log('AUTO_GAIN', `Level too low (${currentLevel.toFixed(4)}), setting max gain`);
+      const newGain = MAX_GAIN;
+      setCurrentGain(newGain);
+      calibratedGain.current = newGain;
+      if (recorderRef.current) {
+        recorderRef.current.setGain(newGain);
+      }
+      setProcessingStatus(`自動調整: ${newGain}x`);
+      return;
+    }
+    
+    // 現在のゲインと音量から必要なゲインを計算
+    // targetLevel / currentLevel * currentGain = newGain
+    const gainRatio = targetLevel / currentLevel;
+    let newGain = Math.round(currentGain * gainRatio);
+    
+    // 範囲制限
+    newGain = Math.max(MIN_GAIN, Math.min(MAX_GAIN, newGain));
+    
+    log('AUTO_GAIN', `Current: level=${currentLevel.toFixed(4)}, gain=${currentGain}x -> New: gain=${newGain}x (target=${targetLevel})`);
+    
+    setCurrentGain(newGain);
+    calibratedGain.current = newGain;
+    if (recorderRef.current) {
+      recorderRef.current.setGain(newGain);
+    }
+    setProcessingStatus(`自動調整: ${newGain}x`);
+  }, [audioLevel, currentGain]);
+
   useEffect(() => {
     return () => {
       if (vadTimerRef.current) clearTimeout(vadTimerRef.current);
@@ -498,6 +534,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     processingStatus,
     statusIcon,
     setGain,
+    autoAdjustGain,
     startListening,
     stopListening,
     clearTranscript,
