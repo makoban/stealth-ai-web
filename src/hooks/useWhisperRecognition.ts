@@ -66,7 +66,6 @@ function calculateMaxChars(): number {
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
-    silenceThreshold = 0.05,
     whisperPrompt = '',
     onBufferReady,
   } = options;
@@ -85,26 +84,19 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
   const recorderRef = useRef<AudioRecorder | null>(null);
   const isProcessingRef = useRef<boolean>(false);
   
-  // リアルタイム表示用（シンプル方式）
+  // リアルタイム表示用
   const displayTextRef = useRef<string>('');
   const maxCharsRef = useRef<number>(20);
   
-  // Whisper定期送信用
-  const whisperIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const WHISPER_INTERVAL = 1500;
-  
-  // Gemini送信用（リアルタイム表示とは独立）
-  const geminiBufferRef = useRef<string>('');
-  const geminiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const GEMINI_FLUSH_DELAY = 400;
-  
   // VAD用
-  const lastSpeechTimeRef = useRef<number>(Date.now());
+  const lastSpeechTimeRef = useRef<number>(0); // 0で初期化（開始直後の誤発火防止）
+  const vadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasSpeechRef = useRef<boolean>(false); // 音声があったかどうか
   const VAD_SPEECH_THRESHOLD = 0.015;
+  const VAD_SILENCE_DURATION = 400; // 0.4秒無音でWhisper送信
   
   const whisperPromptRef = useRef<string>(whisperPrompt);
   const onBufferReadyRef = useRef(onBufferReady);
-  const maxAudioLevelRef = useRef<number>(0);
 
   useEffect(() => {
     onBufferReadyRef.current = onBufferReady;
@@ -129,7 +121,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     const maxChars = maxCharsRef.current;
     
     if (combined.length > maxChars) {
-      // 先頭を削除して最新maxChars文字を保持
       displayTextRef.current = combined.slice(-maxChars);
     } else {
       displayTextRef.current = combined;
@@ -139,34 +130,6 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setInterimTranscript(`💬 ${displayTextRef.current}`);
   }, []);
 
-  // Gemini送信（リアルタイム表示はクリアしない）
-  const flushGeminiBuffer = useCallback(() => {
-    const buffer = geminiBufferRef.current.trim();
-    log('GEMINI', `flushGeminiBuffer - buffer: "${buffer.slice(0, 50)}..."`);
-    
-    if (buffer && onBufferReadyRef.current) {
-      log('GEMINI', 'Sending to Gemini');
-      onBufferReadyRef.current(buffer);
-      geminiBufferRef.current = '';
-      // リアルタイム表示はクリアしない（途切れずに流れ続ける）
-      log('GEMINI', 'Sent, display continues');
-    }
-  }, []);
-
-  // Geminiタイマーリセット
-  const resetGeminiTimer = useCallback(() => {
-    if (geminiTimerRef.current) {
-      clearTimeout(geminiTimerRef.current);
-      geminiTimerRef.current = null;
-    }
-    if (geminiBufferRef.current.trim()) {
-      geminiTimerRef.current = setTimeout(() => {
-        log('TIMER', 'Gemini timer fired');
-        flushGeminiBuffer();
-      }, GEMINI_FLUSH_DELAY);
-    }
-  }, [flushGeminiBuffer]);
-
   const setGain = useCallback((value: number) => {
     setCurrentGain(value);
     if (recorderRef.current) {
@@ -174,30 +137,21 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     }
   }, []);
 
-  // Whisper送信
+  // VAD発火時にWhisper送信
   const sendToWhisper = useCallback(async () => {
     if (!recorderRef.current || isProcessingRef.current || !recorderRef.current.isRecording()) {
-      return;
-    }
-
-    const maxLevel = maxAudioLevelRef.current;
-    log('WHISPER', `sendToWhisper - maxLevel: ${maxLevel.toFixed(3)}`);
-    
-    if (maxLevel < silenceThreshold) {
-      recorderRef.current.getIntermediateBlob();
-      maxAudioLevelRef.current = 0;
+      log('VAD', 'Skipping - recorder not ready or processing');
       return;
     }
 
     const blob = recorderRef.current.getIntermediateBlob();
-    maxAudioLevelRef.current = 0;
     
     if (!blob || blob.size < 1000) {
-      log('WHISPER', `Blob too small: ${blob?.size || 0}`);
+      log('VAD', `Blob too small: ${blob?.size || 0}`);
       return;
     }
 
-    log('WHISPER', `Sending blob: ${blob.size} bytes`);
+    log('VAD', `Sending blob: ${blob.size} bytes`);
     isProcessingRef.current = true;
     setProcessingStatus('Whisper送信中...');
 
@@ -214,21 +168,17 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
         } else {
           log('WHISPER', `Valid text: "${newText}"`);
           
-          // Geminiバッファに追加
-          geminiBufferRef.current = geminiBufferRef.current 
-            ? geminiBufferRef.current + ' ' + newText 
-            : newText;
-          
-          // リアルタイム表示を更新（シンプル方式）
+          // リアルタイム表示を更新
           updateDisplay(newText);
           
           // transcript更新
           setTranscript(prev => prev ? prev + '\n' + newText : newText);
           setProcessingStatus('認識成功');
           
-          // Geminiタイマーリセット
-          lastSpeechTimeRef.current = Date.now();
-          resetGeminiTimer();
+          // Geminiに送信
+          if (onBufferReadyRef.current) {
+            onBufferReadyRef.current(newText);
+          }
         }
       } else {
         log('WHISPER', 'No text in result');
@@ -240,7 +190,51 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     } finally {
       isProcessingRef.current = false;
     }
-  }, [silenceThreshold, updateDisplay, resetGeminiTimer]);
+  }, [updateDisplay]);
+
+  // VAD処理
+  const handleVAD = useCallback((level: number) => {
+    const isSpeaking = level > VAD_SPEECH_THRESHOLD;
+    setIsSpeechDetected(isSpeaking);
+    
+    if (isSpeaking) {
+      // 音声検出
+      hasSpeechRef.current = true;
+      lastSpeechTimeRef.current = Date.now();
+      
+      // VADタイマーをクリア（話し中）
+      if (vadTimerRef.current) {
+        clearTimeout(vadTimerRef.current);
+        vadTimerRef.current = null;
+      }
+    } else {
+      // 無音
+      // 音声があった後の無音のみ処理
+      if (hasSpeechRef.current && lastSpeechTimeRef.current > 0) {
+        const silenceDuration = Date.now() - lastSpeechTimeRef.current;
+        
+        if (silenceDuration >= VAD_SILENCE_DURATION && !vadTimerRef.current) {
+          log('VAD', `Silence detected: ${silenceDuration}ms, triggering Whisper`);
+          
+          // VADタイマー発火
+          vadTimerRef.current = setTimeout(() => {
+            vadTimerRef.current = null;
+            hasSpeechRef.current = false; // リセット
+            sendToWhisper();
+          }, 50); // 少し待ってから送信
+        }
+      }
+    }
+    
+    // 状態表示（リアルタイム表示がない場合のみ）
+    if (!displayTextRef.current) {
+      if (isSpeaking) {
+        setInterimTranscript('🔊 聴いています...');
+      } else {
+        setInterimTranscript('🎤 音声を待機中...');
+      }
+    }
+  }, [sendToWhisper]);
 
   const startListening = useCallback(async () => {
     if (!isSupported) {
@@ -248,15 +242,14 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       return;
     }
 
-    log('START', 'Starting listening...');
+    log('START', 'Starting VAD listening...');
     setError(null);
     setState('starting');
     
     // 全てリセット
-    geminiBufferRef.current = '';
     displayTextRef.current = '';
-    maxAudioLevelRef.current = 0;
-    lastSpeechTimeRef.current = Date.now();
+    lastSpeechTimeRef.current = 0;
+    hasSpeechRef.current = false;
     
     // 最大文字数を計算
     maxCharsRef.current = calculateMaxChars();
@@ -269,83 +262,41 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       await recorder.start((level, clipping) => {
         setAudioLevel(level);
         setIsClipping(clipping);
-        if (level > maxAudioLevelRef.current) {
-          maxAudioLevelRef.current = level;
-        }
         
-        const isSpeaking = level > VAD_SPEECH_THRESHOLD;
-        setIsSpeechDetected(isSpeaking);
-        
-        if (isSpeaking) {
-          lastSpeechTimeRef.current = Date.now();
-          // 発話中はGeminiタイマーをクリア
-          if (geminiTimerRef.current) {
-            clearTimeout(geminiTimerRef.current);
-            geminiTimerRef.current = null;
-          }
-        } else {
-          // 無音が続いたらGeminiタイマー開始
-          const silenceDuration = Date.now() - lastSpeechTimeRef.current;
-          if (silenceDuration >= GEMINI_FLUSH_DELAY && geminiBufferRef.current.trim() && !geminiTimerRef.current) {
-            resetGeminiTimer();
-          }
-        }
-        
-        // 状態表示（リアルタイム表示がない場合のみ）
-        if (!displayTextRef.current) {
-          if (isSpeaking) {
-            setInterimTranscript('🔊 聴いています...');
-          } else {
-            setInterimTranscript('🎤 音声を待機中...');
-          }
-        }
+        // VAD処理
+        handleVAD(level);
       });
 
       recorderRef.current = recorder;
       setState('listening');
       setProcessingStatus('解析中');
       
-      // Whisper定期送信開始
-      whisperIntervalRef.current = setInterval(() => {
-        sendToWhisper();
-      }, WHISPER_INTERVAL);
-      
-      log('START', 'Listening started');
+      log('START', 'VAD listening started');
 
     } catch (e) {
       log('START', `Error: ${e}`);
       setError('マイクの使用が許可されていません');
       setState('idle');
     }
-  }, [isSupported, currentGain, sendToWhisper, resetGeminiTimer]);
+  }, [isSupported, currentGain, handleVAD]);
 
   const stopListening = useCallback(async () => {
     log('STOP', 'Stopping...');
     setState('stopping');
 
-    // タイマークリア
-    if (whisperIntervalRef.current) {
-      clearInterval(whisperIntervalRef.current);
-      whisperIntervalRef.current = null;
-    }
-    if (geminiTimerRef.current) {
-      clearTimeout(geminiTimerRef.current);
-      geminiTimerRef.current = null;
+    // VADタイマークリア
+    if (vadTimerRef.current) {
+      clearTimeout(vadTimerRef.current);
+      vadTimerRef.current = null;
     }
     
-    // 残りバッファをGeminiに送信
-    if (geminiBufferRef.current.trim() && onBufferReadyRef.current) {
-      log('STOP', `Sending remaining buffer: "${geminiBufferRef.current.slice(0, 50)}..."`);
-      onBufferReadyRef.current(geminiBufferRef.current.trim());
-    }
-    
-    geminiBufferRef.current = '';
     displayTextRef.current = '';
 
     if (recorderRef.current) {
       const finalBlob = recorderRef.current.stop();
       
-      if (finalBlob && finalBlob.size > 1000 && maxAudioLevelRef.current >= silenceThreshold) {
+      // 最終音声があれば送信
+      if (finalBlob && finalBlob.size > 1000 && hasSpeechRef.current) {
         setState('processing');
         setInterimTranscript('最終処理中...');
         
@@ -371,21 +322,19 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
     setIsSpeechDetected(false);
     setAudioLevel(0);
     setProcessingStatus('');
-    maxAudioLevelRef.current = 0;
+    hasSpeechRef.current = false;
     log('STOP', 'Stopped');
-  }, [silenceThreshold]);
+  }, []);
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
     setInterimTranscript('');
-    geminiBufferRef.current = '';
     displayTextRef.current = '';
   }, []);
 
   useEffect(() => {
     return () => {
-      if (whisperIntervalRef.current) clearInterval(whisperIntervalRef.current);
-      if (geminiTimerRef.current) clearTimeout(geminiTimerRef.current);
+      if (vadTimerRef.current) clearTimeout(vadTimerRef.current);
       if (recorderRef.current) recorderRef.current.stop();
     };
   }, []);
