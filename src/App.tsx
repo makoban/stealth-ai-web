@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.30.1';
+const APP_VERSION = 'v3.31.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -215,8 +215,11 @@ export default function App() {
   // Whisperの音声認識状態
   const transcript = whisper.transcript;
   const isListening = whisper.isListening;
+  const isCalibrating = whisper.isCalibrating;
+  const calibrationProgress = whisper.calibrationProgress;
   const audioLevel = whisper.audioLevel;
   const isClipping = whisper.isClipping;
+  const currentGain = whisper.currentGain;
   // isSpeechDetectedは音量バーに置き換えたため削除
   // statusIconは音量バーに置き換えたため削除
   const isSupported = true;
@@ -787,23 +790,31 @@ export default function App() {
           </button>
         </div>
         <div className="header-right">
-          {/* 音量レベルバー（5本） */}
-          <div className="audio-level-bars">
-            {[0.5, 0.55, 0.6, 0.65, 0.7].map((threshold, i) => {
-              const isActive = audioLevel > threshold;
-              // 左（0.5）が青、右（0.7+）が赤のグラデーション
-              const hue = 240 - (i * 48); // 240(青) → 48(オレンジ) → 0(赤)
-              return (
-                <div
-                  key={i}
-                  className={`level-bar ${isActive ? 'active' : ''}`}
-                  style={{
-                    backgroundColor: isActive ? `hsl(${hue}, 80%, 50%)` : '#333',
-                  }}
-                />
-              );
-            })}
-          </div>
+          {/* キャリブレーション中はプログレスバー表示 */}
+          {isCalibrating ? (
+            <div className="calibration-indicator" title="マイクの感度を自動調整中...">
+              <div className="calibration-progress" style={{ width: `${calibrationProgress * 100}%` }} />
+              <span className="calibration-text">調整中</span>
+            </div>
+          ) : (
+            /* 音量レベルバー（5本） */
+            <div className="audio-level-bars" title={`ゲイン: ${currentGain}x`}>
+              {[0.5, 0.55, 0.6, 0.65, 0.7].map((threshold, i) => {
+                const isActive = audioLevel > threshold;
+                // 左（0.5）が青、右（0.7+）が赤のグラデーション
+                const hue = 240 - (i * 48); // 240(青) → 48(オレンジ) → 0(赤)
+                return (
+                  <div
+                    key={i}
+                    className={`level-bar ${isActive ? 'active' : ''}`}
+                    style={{
+                      backgroundColor: isActive ? `hsl(${hue}, 80%, 50%)` : '#333',
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
           <button onClick={() => setShowLevelSelector(true)} className="level-btn-large">
             📚 {KNOWLEDGE_LEVEL_LABELS[knowledgeLevel]}
           </button>

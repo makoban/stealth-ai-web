@@ -353,8 +353,8 @@ export class AudioRecorder {
   }
 
   setGain(value: number): void {
-    // 最大50xまで許可
-    this.gainValue = Math.min(Math.max(value, 1), 50);
+    // 最大100xまで許可（機種差対応のため上限を拡大）
+    this.gainValue = Math.min(Math.max(value, 1), 100);
     if (this.gainNode) {
       this.gainNode.gain.value = this.gainValue;
     }

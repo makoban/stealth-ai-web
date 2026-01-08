@@ -154,6 +154,39 @@
   box-shadow: 0 0 3px currentColor;
 }
 
+/* キャリブレーションインジケーター */
+.calibration-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  width: 60px;
+  margin-right: 8px;
+  padding: 3px 5px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.calibration-progress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  transition: width 0.1s ease;
+}
+
+.calibration-text {
+  position: relative;
+  z-index: 1;
+  font-size: 10px;
+  font-weight: 600;
+  color: white;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}
+
 /* 知識レベルボタン（大きい文字） */
 .level-btn-large {
   background: rgba(255, 255, 255, 0.25);
