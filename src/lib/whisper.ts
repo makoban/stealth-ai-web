@@ -142,9 +142,7 @@ export class AudioRecorder {
   private scriptProcessor: ScriptProcessorNode | null = null;
   private onAudioLevelCallback: ((level: number, isClipping: boolean) => void) | null = null;
   private animationFrameId: number | null = null;
-  // 2つのバッファ（表示用・会話用）
-  private realtimeBuffer: Float32Array[] = [];  // 表示用（1.5秒でカット）
-  private conversationBuffer: Float32Array[] = [];  // 会話用（VADでカット）
+  private audioData: Float32Array[] = [];
   private isRecordingFlag: boolean = false;
   private sampleRate: number = 48000;
 
@@ -162,8 +160,7 @@ export class AudioRecorder {
 
   async start(onAudioLevel?: (level: number, isClipping: boolean) => void): Promise<void> {
     this.onAudioLevelCallback = onAudioLevel || null;
-    this.realtimeBuffer = [];
-    this.conversationBuffer = [];
+    this.audioData = [];
     this.isRecordingFlag = true;
     this.clippingCount = 0;
 
@@ -186,14 +183,14 @@ export class AudioRecorder {
     // === 高度な音声処理チェーン ===
 
     // 1. ハイパスフィルター（低周波ノイズ除去: エアコン、車の音など）
-    // 人の声の基本周波数は300Hz以上なので、300Hz以下をカット
+    // 人の声は約85Hz以上なので、80Hz以下をカット
     this.highPassFilter = this.audioContext.createBiquadFilter();
     this.highPassFilter.type = 'highpass';
     this.highPassFilter.frequency.value = 300;
     this.highPassFilter.Q.value = 0.7;
 
     // 2. ローパスフィルター（高周波ノイズ除去: キーン音など）
-    // 人の声は約3400Hz以下なので、3400Hz以上をカット
+    // 人の声は約3400Hz以下なので、4000Hz以上をカット
     this.lowPassFilter = this.audioContext.createBiquadFilter();
     this.lowPassFilter.type = 'lowpass';
     this.lowPassFilter.frequency.value = 3400;
@@ -234,14 +231,10 @@ export class AudioRecorder {
         }
       }
 
-      // データをコピーして両方のバッファに保存
-      const copyRealtime = new Float32Array(inputData.length);
-      copyRealtime.set(inputData);
-      this.realtimeBuffer.push(copyRealtime);
-      
-      const copyConversation = new Float32Array(inputData.length);
-      copyConversation.set(inputData);
-      this.conversationBuffer.push(copyConversation);
+      // データをコピーして保存
+      const copy = new Float32Array(inputData.length);
+      copy.set(inputData);
+      this.audioData.push(copy);
     };
 
     // 接続チェーン:
@@ -316,52 +309,32 @@ export class AudioRecorder {
     this.compressor = null;
     this.onAudioLevelCallback = null;
 
-    // 録音データをWAVに変換（会話用バッファを返す）
-    if (this.conversationBuffer.length > 0) {
-      const blob = this.createWavBlobFromBuffer(this.conversationBuffer);
+    // 録音データをWAVに変換
+    if (this.audioData.length > 0) {
+      const blob = this.createWavBlob();
       console.log('[AudioRecorder] Stopped. Clipping events:', this.clippingCount);
-      this.realtimeBuffer = [];
-      this.conversationBuffer = [];
+      this.audioData = [];
       return blob;
     }
     return null;
   }
 
-  // 表示用バッファを取得してクリア（1.5秒ごとに呼ばれる）
-  getRealtimeBlob(): Blob | null {
-    console.log('[AudioRecorder] getRealtimeBlob called, buffer chunks:', this.realtimeBuffer.length, ', conversation chunks:', this.conversationBuffer.length);
-    if (this.realtimeBuffer.length > 0) {
-      const blob = this.createWavBlobFromBuffer(this.realtimeBuffer);
-      this.realtimeBuffer = [];  // 表示用バッファのみクリア
-      return blob;
-    }
-    return null;
-  }
-
-  // 会話用バッファを取得してクリア（VADで呼ばれる）
-  getConversationBlob(): Blob | null {
-    console.log('[AudioRecorder] getConversationBlob called, buffer chunks:', this.conversationBuffer.length);
-    if (this.conversationBuffer.length > 0) {
-      const blob = this.createWavBlobFromBuffer(this.conversationBuffer);
-      this.conversationBuffer = [];  // 会話用バッファのみクリア
-      console.log('[AudioRecorder] Conversation blob created:', blob.size, 'bytes');
-      return blob;
-    }
-    console.log('[AudioRecorder] Conversation buffer is empty!');
-    return null;
-  }
-
-  // 後方互換性のため残す（会話用バッファを返す）
+  // 現在までの録音データを取得（録音は継続）
   getIntermediateBlob(): Blob | null {
-    return this.getConversationBlob();
+    if (this.audioData.length > 0) {
+      const blob = this.createWavBlob();
+      this.audioData = []; // データをクリア
+      return blob;
+    }
+    return null;
   }
 
-  private createWavBlobFromBuffer(buffer: Float32Array[]): Blob {
+  private createWavBlob(): Blob {
     // 全てのチャンクを結合
-    const totalLength = buffer.reduce((sum, chunk) => sum + chunk.length, 0);
+    const totalLength = this.audioData.reduce((sum, chunk) => sum + chunk.length, 0);
     const combined = new Float32Array(totalLength);
     let offset = 0;
-    for (const chunk of buffer) {
+    for (const chunk of this.audioData) {
       combined.set(chunk, offset);
       offset += chunk.length;
     }
