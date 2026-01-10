@@ -802,11 +802,12 @@ app.get('/api/assemblyai/token', checkUserAuth, async (req, res) => {
 // Stripe 決済API
 // ===========================================
 
-// プラン定義
+// プラン定義（画面表示と同期）
 const STRIPE_PLANS = {
-  light: { price: 500, points: 500, name: 'ライト' },
-  standard: { price: 1000, points: 1200, name: 'スタンダード' },
-  pro: { price: 3000, points: 5000, name: 'プロ' },
+  trial: { price: 100, points: 100, name: 'お試し' },
+  standard: { price: 500, points: 550, name: '標準' },
+  value: { price: 1000, points: 1200, name: 'バリュー' },
+  pro: { price: 3000, points: 4000, name: 'プロ' },
 };
 
 // Stripe Checkout Sessionを作成

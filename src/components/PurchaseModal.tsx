@@ -15,12 +15,15 @@ interface Plan {
   price: number;
   points: number;
   bonus: string;
+  popular?: boolean;
 }
 
+// プラン定義（server.jsと同期）
 const PLANS: Plan[] = [
-  { id: 'light', name: 'ライト', price: 500, points: 500, bonus: '' },
-  { id: 'standard', name: 'スタンダード', price: 1000, points: 1200, bonus: '+20%' },
-  { id: 'pro', name: 'プロ', price: 3000, points: 5000, bonus: '+67%' },
+  { id: 'trial', name: 'お試し', price: 100, points: 100, bonus: '' },
+  { id: 'standard', name: '標準', price: 500, points: 550, bonus: '+10% お得！', popular: true },
+  { id: 'value', name: 'バリュー', price: 1000, points: 1200, bonus: '+20% お得！' },
+  { id: 'pro', name: 'プロ', price: 3000, points: 4000, bonus: '+33% お得！' },
 ];
 
 export function PurchaseModal({ isOpen, onClose }: PurchaseModalProps) {
@@ -104,10 +107,11 @@ export function PurchaseModal({ isOpen, onClose }: PurchaseModalProps) {
           {PLANS.map((plan) => (
             <button
               key={plan.id}
-              className={`purchase-plan ${selectedPlan === plan.id ? 'selected' : ''}`}
+              className={`purchase-plan ${selectedPlan === plan.id ? 'selected' : ''} ${plan.popular ? 'popular' : ''}`}
               onClick={() => handlePurchase(plan)}
               disabled={loading}
             >
+              {plan.popular && <span className="purchase-plan-popular-badge">一番人気</span>}
               <div className="purchase-plan-header">
                 <span className="purchase-plan-name">{plan.name}</span>
                 {plan.bonus && <span className="purchase-plan-bonus">{plan.bonus}</span>}
@@ -126,6 +130,7 @@ export function PurchaseModal({ isOpen, onClose }: PurchaseModalProps) {
         <div className="purchase-modal-footer">
           <p>決済はStripeで安全に処理されます</p>
           <p>購入後すぐにポイントが付与されます</p>
+          <p>100円以上の購入で有料会員になります</p>
         </div>
       </div>
     </div>
