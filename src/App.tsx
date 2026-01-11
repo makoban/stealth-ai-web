@@ -970,38 +970,44 @@ export default function App() {
 
       {/* フッター */}
       <footer className="footer">
-        <button
-          className={`record-btn ${isListening ? 'recording' : ''}`}
-          onClick={toggleRecording}
-        >
-          {isListening ? '⏹ 停止' : '🎙 開始'}
-        </button>
-        {/* セッション時間表示（無料会員のみ） */}
-        {isListening && !userData?.isPremium && (
-          <div className="session-timer">
-            <span className="timer-label">残り</span>
-            <span className="timer-value">
-              {Math.max(0, Math.floor((FREE_SESSION_LIMIT_SECONDS - sessionElapsedSeconds) / 60))}:
-              {String(Math.max(0, (FREE_SESSION_LIMIT_SECONDS - sessionElapsedSeconds) % 60)).padStart(2, '0')}
-            </span>
-          </div>
-        )}
-        <button className="reset-btn" onClick={handleReset}>
-          🗑 リセット
-        </button>
-        <button
-          className="export-btn"
-          onClick={() => {
-            if (!userData?.isPremium) {
-              alert('🔒 Excel出力は有料会員限定機能です。\nポイントを購入すると有料会員になります。');
-              return;
-            }
-            exportToExcel(conversations, summaryHistory, lookedUpWords);
-          }}
-          disabled={conversations.length === 0}
-        >
-          📊 Excel{!userData?.isPremium && '🔒'}
-        </button>
+        <div className="footer-main-controls">
+          <button
+            className={`record-btn ${isListening ? 'recording' : ''}`}
+            onClick={toggleRecording}
+          >
+            {isListening ? '⏹ 停止' : '🎙 開始'}
+          </button>
+          
+          {/* セッション時間表示（無料会員のみ） */}
+          {isListening && !userData?.isPremium && (
+            <div className="session-timer">
+              <span className="timer-label">残り</span>
+              <span className="timer-value">
+                {Math.max(0, Math.floor((FREE_SESSION_LIMIT_SECONDS - sessionElapsedSeconds) / 60))}:
+                {String(Math.max(0, (FREE_SESSION_LIMIT_SECONDS - sessionElapsedSeconds) % 60)).padStart(2, '0')}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="footer-sub-controls">
+          <button className="reset-btn" onClick={handleReset}>
+            🗑 リセット
+          </button>
+          <button
+            className="export-btn"
+            onClick={() => {
+              if (!userData?.isPremium) {
+                alert('🔒 Excel出力は有料会員限定機能です。\nポイントを購入すると有料会員になります。');
+                return;
+              }
+              exportToExcel(conversations, summaryHistory, lookedUpWords);
+            }}
+            disabled={conversations.length === 0}
+          >
+            📊 Excel{!userData?.isPremium && '🔒'}
+          </button>
+        </div>
       </footer>
 
       {/* エラー表示 */}

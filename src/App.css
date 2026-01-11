@@ -1600,38 +1600,78 @@
 /* フッター */
 .footer {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 16px;
   background: var(--surface-elevated);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
+.footer-main-controls {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+.footer-sub-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.footer .record-btn {
+  width: 100%;
+  max-width: 300px;
+  height: 56px;
+  font-size: 20px;
+  border-radius: 28px;
+}
+
+.session-timer {
+  position: absolute;
+  right: 0;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* 録音ボタン */
 .record-btn {
-  padding: 12px 28px;
-  border-radius: 28px;
-  font-size: 15px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.3s ease;
   border: none;
-  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  /* 停止中：開始ボタン（赤） */
+  background: linear-gradient(135deg, #FF4B2B 0%, #FF416C 100%);
   color: white;
-  box-shadow: 0 4px 15px rgba(255, 20, 147, 0.4);
+  box-shadow: 0 4px 15px rgba(255, 75, 43, 0.4);
 }
 
 .record-btn:hover {
   transform: scale(1.05);
-  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.5);
+  box-shadow: 0 6px 20px rgba(255, 75, 43, 0.5);
 }
 
 .record-btn.recording {
-  background: linear-gradient(135deg, var(--error) 0%, #FF8080 100%);
-  box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+  /* 起動中：停止ボタン（青） */
+  background: linear-gradient(135deg, #2196F3 0%, #21CBF3 100%);
+  box-shadow: 0 4px 15px rgba(33, 150, 243, 0.4);
   animation: pulse-recording 1.5s ease-in-out infinite;
+}
+
+.record-btn.recording:hover {
+  box-shadow: 0 6px 20px rgba(33, 150, 243, 0.5);
 }
 
 @keyframes pulse-recording {
