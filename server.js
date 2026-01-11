@@ -274,10 +274,22 @@ const upload = multer({
 
 // CORS設定
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+// Stripe Webhookは生のボディが必要なので、express.jsonを適用しない
+app.use((req, res, next) => {
+  if (req.originalUrl === '/api/stripe/webhook') {
+    next();
+  } else {
+    express.json({ limit: '10mb' })(req, res, next);
+  }
+});
 
-// 認証ミドルウェアを全APIに適用
-app.use('/api', authenticateToken);
+// 認証ミドルウェアを全APIに適用（Stripe Webhookは除外）
+app.use('/api', (req, res, next) => {
+  if (req.originalUrl === '/api/stripe/webhook') {
+    return next();
+  }
+  authenticateToken(req, res, next);
+});
 
 // 静的ファイルの配信
 app.use(express.static(path.join(__dirname, 'dist')));
