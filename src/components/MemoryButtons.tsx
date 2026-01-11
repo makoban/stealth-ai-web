@@ -13,11 +13,16 @@ interface MemoryButtonsProps {
   fullContent: string;
 }
 
-// プチ記憶の要約を生成
+// ヘルパー関数: 文字列を7文字に要約
+function summarizeTo7Chars(text: string): string {
+  if (!text) return '';
+  const cleanText = text.replace(/\s+/g, '');
+  return cleanText.length <= 7 ? cleanText : cleanText.slice(0, 7);
+}
+
+// プチレクチャーの要約を生成（7文字に要約）
 async function generatePetitSummary(content: string): Promise<string> {
-  if (!content || content.length < 10) return content;
-  if (content.length <= 20) return content;
-  return content.slice(0, 20) + '...';
+  return summarizeTo7Chars(content);
 }
 
 export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitContent, fullContent }: MemoryButtonsProps) {
@@ -171,10 +176,11 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
       const content = event.target?.result as string;
       const nameWithoutExt = file.name.replace(/\.txt$/i, '');
       
-      localStorage.setItem('stealth_full_memory_name', nameWithoutExt);
+      const summarizedName = summarizeTo7Chars(nameWithoutExt);
+      localStorage.setItem('stealth_full_memory_name', summarizedName);
       localStorage.setItem('stealth_full_memory_path', file.name);
       
-      setFullFileName(nameWithoutExt);
+      setFullFileName(summarizedName);
       
       try {
         const keywords = await generateKeywordsFromTeachFile(content);
@@ -209,7 +215,7 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
             className={`memory-btn petit ${petitContent ? 'has-content' : ''}`}
             onClick={() => setShowPetitModal(true)}
           >
-            📝 {petitSummary || 'プチ記憶'}
+            📝 {petitSummary || 'プチレクチャー'}
           </button>
           {petitContent && (
             <button className="memory-clear-btn" onClick={clearPetitMemory}>×</button>
@@ -236,7 +242,7 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
             }}
             disabled={isGeneratingKeywords || !user}
           >
-            {isGeneratingKeywords ? '🔄 学習中...' : `📚 ${fullFileName || 'フル記憶'}`}
+            {isGeneratingKeywords ? '🔄 学習中...' : `📚 ${fullFileName || 'ガチレクチャー'}`}
           </button>
           {fullContent && !isGeneratingKeywords && (
             <button className="memory-clear-btn" onClick={clearFullMemory}>×</button>
@@ -249,12 +255,12 @@ export function MemoryButtons({ onPetitChange, onFullChange, onClear, petitConte
         <div className="memory-modal-overlay" onClick={() => setShowPetitModal(false)}>
           <div className="memory-modal" onClick={(e) => e.stopPropagation()}>
             <div className="memory-modal-header">
-              <h3>📝 プチ記憶</h3>
+              <h3>📝 プチレクチャー</h3>
               <button className="memory-modal-close" onClick={() => setShowPetitModal(false)}>×</button>
             </div>
             <div className="memory-modal-content">
               <p className="memory-description">
-                手入力で200文字以内のメモを保存できます。<br />
+                手入力で200文字以内のレクチャー内容を保存できます。<br />
                 次回ログイン時も自動的に読み込まれます。
               </p>
               {!user && (

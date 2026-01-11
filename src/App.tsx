@@ -28,7 +28,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.35.2';
+const APP_VERSION = 'v3.36.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -885,7 +885,7 @@ export default function App() {
           >
             <h2>
               {currentGenre && <span className={`genre-icon genre-${getGenreColorClass(currentGenre.primary)}`}>{getGenreIcon(currentGenre.primary)}</span>}
-              {summaryHistory.length > 0 ? summaryHistory[0].summary.slice(0, 20) : '要約'}
+              📋 {summaryHistory.length > 0 ? summaryHistory[0].summary.slice(0, 20) : '要約'}
               {expandedSection === 'summary' ? ' ▼' : ' ▶'}
             </h2>
             <div className="section-content">
