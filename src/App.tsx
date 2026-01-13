@@ -29,7 +29,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.36.0';
+const APP_VERSION = 'v3.37.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -187,13 +187,25 @@ export default function App() {
   // ポイント0で自動停止用のフラグと関数参照
   const pointsZeroStopRef = useRef<boolean>(false);
   const stopListeningRef = useRef<(() => void) | null>(null);
-  
+
   // 音声増幅倍率（自動調整、初期値は最大）
   const [gainValue, setGainValue] = useState<number>(50);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showGainAdjuster, setShowGainAdjuster] = useState(false);
   const [showLegalPage, setShowLegalPage] = useState<'terms' | 'privacy' | 'tokushoho' | null>(null);
+  const [showVersionModal, setShowVersionModal] = useState(false);
+  const [showTermsAgreement, setShowTermsAgreement] = useState(false);
+  const [hasAgreedTerms, setHasAgreedTerms] = useState<boolean>(() => {
+    return localStorage.getItem('kuroko_terms_agreed') === 'true';
+  });
+
+  // 初回ログイン時に利用規約同意モーダルを表示
+  useEffect(() => {
+    if (user && !hasAgreedTerms) {
+      setShowTermsAgreement(true);
+    }
+  }, [user, hasAgreedTerms]);
 
   // Whisperプロンプト用（フック使用前に定義が必要）
   const [whisperPrompt, setWhisperPrompt] = useState<string>('');
@@ -759,14 +771,15 @@ export default function App() {
       {/* ヘッダー */}
       <header className="header">
         <div className="header-left">
-          {/* ロゴ（タップでバージョン表示） */}
-          <h1 
-            className="app-logo" 
-            onClick={() => alert(`${APP_NAME} ${APP_VERSION}`)}
+          {/* ロゴ（タップでバージョンモーダル表示） */}
+          <div 
+            className="app-logo-container" 
+            onClick={() => setShowVersionModal(true)}
             title={`${APP_NAME} ${APP_VERSION}`}
           >
-            KUROKO+
-          </h1>
+            <img src="/logo.png" alt="KUROKO+" className="app-logo-icon" />
+            <span className="app-logo-text">KUROKO+</span>
+          </div>
           {/* テーマ切り替えアイコン */}
           <button
             className="icon-btn theme-icon-btn"
@@ -1227,6 +1240,93 @@ export default function App() {
               ))}
             </div>
             <button onClick={() => setShowLevelSelector(false)}>閉じる</button>
+          </div>
+        </div>
+      )}
+
+      {/* バージョンモーダル */}
+      {showVersionModal && (
+        <div className="modal-overlay" onClick={() => setShowVersionModal(false)}>
+          <div className="modal version-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="version-header">
+              <img src="/logo.png" alt="KUROKO+" className="version-logo" />
+              <h2>{APP_NAME}</h2>
+              <p className="version-number">{APP_VERSION}</p>
+            </div>
+            <div className="version-legal-links">
+              <button 
+                className="legal-link-btn"
+                onClick={() => {
+                  setShowVersionModal(false);
+                  setShowLegalPage('terms');
+                }}
+              >
+                📄 利用規約
+              </button>
+              <button 
+                className="legal-link-btn"
+                onClick={() => {
+                  setShowVersionModal(false);
+                  setShowLegalPage('privacy');
+                }}
+              >
+                🔒 プライバシーポリシー
+              </button>
+              <button 
+                className="legal-link-btn"
+                onClick={() => {
+                  setShowVersionModal(false);
+                  setShowLegalPage('tokushoho');
+                }}
+              >
+                🏢 特定商取引法に基づく表示
+              </button>
+            </div>
+            <p className="version-copyright">© 2026 株式会社ビークリエイティブ</p>
+            <button onClick={() => setShowVersionModal(false)}>閉じる</button>
+          </div>
+        </div>
+      )}
+
+      {/* 利用規約同意モーダル（初回ログイン時） */}
+      {showTermsAgreement && (
+        <div className="modal-overlay">
+          <div className="modal terms-agreement-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="terms-agreement-header">
+              <img src="/logo.png" alt="KUROKO+" className="terms-logo" />
+              <h2>KUROKO+ へようこそ</h2>
+            </div>
+            <p className="terms-agreement-description">
+              ご利用いただく前に、利用規約およびプライバシーポリシーをご確認ください。
+            </p>
+            <div className="terms-agreement-links">
+              <button 
+                className="terms-link-btn"
+                onClick={() => setShowLegalPage('terms')}
+              >
+                📄 利用規約を読む
+              </button>
+              <button 
+                className="terms-link-btn"
+                onClick={() => setShowLegalPage('privacy')}
+              >
+                🔒 プライバシーポリシーを読む
+              </button>
+            </div>
+            <div className="terms-agreement-notice">
+              <p>⚠️ 本アプリは周囲の会話を音声認識します。</p>
+              <p>会話当事者の同意を得てからご利用ください。</p>
+            </div>
+            <button 
+              className="terms-agree-btn"
+              onClick={() => {
+                localStorage.setItem('kuroko_terms_agreed', 'true');
+                setHasAgreedTerms(true);
+                setShowTermsAgreement(false);
+              }}
+            >
+              同意して利用を開始する
+            </button>
           </div>
         </div>
       )}
