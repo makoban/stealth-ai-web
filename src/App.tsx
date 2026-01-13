@@ -1282,7 +1282,7 @@ export default function App() {
                 🏢 特定商取引法に基づく表示
               </button>
             </div>
-            <p className="version-copyright">© 2026 株式会社ビークリエイティブ</p>
+            <p className="version-copyright">© 2026 株式会社バンテックス（販売）/ 株式会社ビークリエイティブ（開発）</p>
             <button onClick={() => setShowVersionModal(false)}>閉じる</button>
           </div>
         </div>
