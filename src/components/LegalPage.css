@@ -13,7 +13,7 @@
 }
 
 .legal-page-container {
-  background: var(--bg-primary);
+  background: #ffffff;
   border-radius: 12px;
   max-width: 800px;
   width: 100%;
@@ -28,13 +28,14 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px 24px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid #dddddd;
+  background: #ffffff;
 }
 
 .legal-page-header h1 {
   margin: 0;
   font-size: 1.25rem;
-  color: var(--text-primary);
+  color: #333333;
 }
 
 .legal-close-btn {
@@ -58,19 +59,20 @@
   padding: 24px;
   font-size: 0.9rem;
   line-height: 1.8;
-  color: var(--text-primary);
+  color: #333333;
+  background: #ffffff;
 }
 
 .legal-page-content h1 {
   font-size: 1.5rem;
   margin: 24px 0 16px;
-  color: var(--text-primary);
+  color: #333333;
 }
 
 .legal-page-content h2 {
   font-size: 1.2rem;
   margin: 20px 0 12px;
-  color: var(--text-primary);
+  color: #333333;
   border-bottom: 1px solid var(--border-color);
   padding-bottom: 8px;
 }
@@ -78,7 +80,7 @@
 .legal-page-content h3 {
   font-size: 1rem;
   margin: 16px 0 8px;
-  color: var(--text-primary);
+  color: #333333;
 }
 
 .legal-page-content p {
@@ -117,9 +119,10 @@
 
 .legal-page-footer {
   padding: 16px 24px;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid #dddddd;
   display: flex;
   justify-content: center;
+  background: #ffffff;
 }
 
 .legal-page-footer button {
