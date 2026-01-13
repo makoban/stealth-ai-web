@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { UserMenu } from './components/UserMenu';
+import { LegalPage } from './components/LegalPage';
 import { MemoryButtons } from './components/MemoryButtons';
 import { useAuth } from './contexts/AuthContext';
 import { useWhisperRecognition } from './hooks/useWhisperRecognition';
@@ -192,6 +193,7 @@ export default function App() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [showGainAdjuster, setShowGainAdjuster] = useState(false);
+  const [showLegalPage, setShowLegalPage] = useState<'terms' | 'privacy' | 'tokushoho' | null>(null);
 
   // Whisperプロンプト用（フック使用前に定義が必要）
   const [whisperPrompt, setWhisperPrompt] = useState<string>('');
@@ -1037,9 +1039,49 @@ export default function App() {
                 <p>Whisper: {apiUsage.whisper.callCount}回 ({(apiUsage.whisper.totalDurationSeconds / 60).toFixed(1)}分)</p>
               </div>
             </div>
+            <div className="setting-item legal-links">
+              <label>法的情報</label>
+              <div className="legal-buttons">
+                <button
+                  className="legal-link-btn"
+                  onClick={() => {
+                    setShowSettings(false);
+                    setShowLegalPage('terms');
+                  }}
+                >
+                  利用規約
+                </button>
+                <button
+                  className="legal-link-btn"
+                  onClick={() => {
+                    setShowSettings(false);
+                    setShowLegalPage('privacy');
+                  }}
+                >
+                  プライバシーポリシー
+                </button>
+                <button
+                  className="legal-link-btn"
+                  onClick={() => {
+                    setShowSettings(false);
+                    setShowLegalPage('tokushoho');
+                  }}
+                >
+                  特定商取引法に基づく表示
+                </button>
+              </div>
+            </div>
             <button onClick={() => setShowSettings(false)}>閉じる</button>
           </div>
         </div>
+      )}
+
+      {/* 法的文書モーダル */}
+      {showLegalPage && (
+        <LegalPage
+          type={showLegalPage}
+          onClose={() => setShowLegalPage(null)}
+        />
       )}
 
       {/* ゲイン調整モーダル */}

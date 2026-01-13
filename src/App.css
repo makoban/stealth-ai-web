@@ -1899,6 +1899,34 @@
   color: var(--text-secondary) !important;
 }
 
+/* 法的情報リンク */
+.legal-links {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.legal-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legal-link-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s;
+}
+
+.legal-link-btn:hover {
+  background: var(--border);
+}
+
 /* 知識レベルモーダル */
 .level-modal {
   max-width: 360px;
