@@ -29,7 +29,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.37.0';
+const APP_VERSION = 'v3.37.1';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -1289,8 +1289,8 @@ export default function App() {
       )}
 
       {/* 利用規約同意モーダル（初回ログイン時） */}
-      {showTermsAgreement && (
-        <div className="modal-overlay">
+      {showTermsAgreement && !showLegalPage && (
+        <div className="modal-overlay terms-agreement-overlay">
           <div className="modal terms-agreement-modal" onClick={(e) => e.stopPropagation()}>
             <div className="terms-agreement-header">
               <img src="/logo.png" alt="KUROKO+" className="terms-logo" />

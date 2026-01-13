@@ -551,7 +551,12 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 100;
+  z-index: 1000;
+}
+
+/* 利用規約同意モーダルは最前面に表示 */
+.modal-overlay.terms-agreement-overlay {
+  z-index: 3000;
 }
 
 .modal {
