@@ -551,7 +551,12 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 100;
+  z-index: 1000;
+}
+
+/* 利用規約同意モーダルは最前面に表示 */
+.modal-overlay.terms-agreement-overlay {
+  z-index: 3000;
 }
 
 .modal {
@@ -1899,6 +1904,34 @@
   color: var(--text-secondary) !important;
 }
 
+/* 法的情報リンク */
+.legal-links {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.legal-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legal-link-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.2s;
+}
+
+.legal-link-btn:hover {
+  background: var(--border);
+}
+
 /* 知識レベルモーダル */
 .level-modal {
   max-width: 360px;
@@ -2191,23 +2224,36 @@
 
 /* ===== v3.15 ヘッダーコンパクト化 ===== */
 
-/* アプリロゴ（タップでバージョン表示） */
-.app-logo {
-  font-size: 14px;
-  font-weight: 700;
-  margin: 0;
-  white-space: nowrap;
+/* アプリロゴコンテナ（タップでバージョンモーダル表示） */
+.app-logo-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
   transition: transform 0.2s;
   user-select: none;
 }
 
-.app-logo:hover {
+.app-logo-container:hover {
   transform: scale(1.05);
 }
 
-.app-logo:active {
+.app-logo-container:active {
   transform: scale(0.95);
+}
+
+.app-logo-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.app-logo-text {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+  white-space: nowrap;
 }
 
 /* アイコンボタン共通スタイル */
@@ -2247,7 +2293,12 @@
 
 /* レスポンシブ対応（スマホ） */
 @media (max-width: 480px) {
-  .app-logo {
+  .app-logo-icon {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .app-logo-text {
     font-size: 12px;
   }
   
@@ -2269,7 +2320,12 @@
 
 /* 超小型画面対応（iPhone SE等） */
 @media (max-width: 375px) {
-  .app-logo {
+  .app-logo-icon {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .app-logo-text {
     font-size: 11px;
   }
   
@@ -2296,4 +2352,154 @@
     padding: 2px 6px;
     font-size: 9px;
   }
+}
+
+/* ===== バージョンモーダル ===== */
+.version-modal {
+  text-align: center;
+  max-width: 320px;
+}
+
+.version-header {
+  margin-bottom: 20px;
+}
+
+.version-logo {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  margin-bottom: 12px;
+  object-fit: cover;
+}
+
+.version-header h2 {
+  font-size: 20px;
+  margin: 0 0 4px 0;
+}
+
+.version-number {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+.version-legal-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.legal-link-btn {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.legal-link-btn:hover {
+  background: #e8e8e8;
+}
+
+.version-copyright {
+  font-size: 11px;
+  color: #999;
+  margin: 16px 0 8px;
+}
+
+/* ===== 利用規約同意モーダル ===== */
+.terms-agreement-modal {
+  text-align: center;
+  max-width: 360px;
+}
+
+.terms-agreement-header {
+  margin-bottom: 16px;
+}
+
+.terms-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  object-fit: cover;
+}
+
+.terms-agreement-header h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.terms-agreement-description {
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.terms-agreement-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.terms-link-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.terms-link-btn:hover {
+  background: #e8e8e8;
+}
+
+.terms-agreement-notice {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.terms-agreement-notice p {
+  font-size: 12px;
+  color: #856404;
+  margin: 4px 0;
+  line-height: 1.4;
+}
+
+.terms-agree-btn {
+  width: 100%;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.terms-agree-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+.terms-agree-btn:active {
+  transform: scale(0.98);
 }
