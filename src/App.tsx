@@ -8,6 +8,7 @@ import {
   detectProperNounsExtended,
   investigateProperNoun,
   summarizeConversation,
+  summarizeIncremental,
   correctConversationWithGenre,
   detectConversationGenre,
   generateGenreKeywords,
@@ -28,7 +29,7 @@ import { setPointsUpdateCallback } from './lib/whisper';
 import { exportToExcel } from './lib/excel';
 import './App.css';
 
-const APP_VERSION = 'v3.36.0';
+const APP_VERSION = 'v3.37.0';
 const APP_NAME = 'KUROKO +';
 
 // カラーテーマの型と定義
@@ -326,6 +327,10 @@ export default function App() {
   const lastProcessedTranscript = useRef('');
   const conversationSummaryRef = useRef<ConversationSummary | null>(null);
   const processedWordsRef = useRef<Set<string>>(new Set());
+  
+  // インクリメンタル要約用（直近の会話のみを要約）
+  const [latestSummary, setLatestSummary] = useState<string>('');
+  const lastSummaryUpdateRef = useRef<number>(0);
 
   // API使用量を定期更新
   useEffect(() => {
@@ -438,13 +443,36 @@ export default function App() {
     console.log('[App] Dynamic Whisper prompt updated:', prompt.slice(0, 100) + '...');
   }, [combinedMemoryContent, teachFileKeywords, genreKeywords, summaryHistory]);
 
-  // 要約を更新（過去3会話+現在の会話を分析）
+  // インクリメンタル要約（直近の会話を素早く要約）
+  const updateIncrementalSummary = useCallback(async (latestText: string) => {
+    const now = Date.now();
+    // 3秒以内の更新はスキップ（APIコール節約）
+    if (now - lastSummaryUpdateRef.current < 3000) return;
+    if (latestText.length < 30) return;
+    
+    lastSummaryUpdateRef.current = now;
+    
+    try {
+      const summary = await summarizeIncremental(latestText, latestSummary || null);
+      if (summary) {
+        setLatestSummary(summary);
+        console.log('[App] Incremental summary updated:', summary);
+      }
+    } catch (e) {
+      console.error('Incremental summary error:', e);
+    }
+  }, [latestSummary]);
+
+  // 要約を更新（過去3会話+現在の会話を分析）- バックグラウンドで実行
   const updateSummary = useCallback(async (conversation: string) => {
     console.log('[App] updateSummary called, length:', conversation.length);
     if (conversation.length < 50) {
       console.log('[App] Skipping summary - text too short');
       return;
     }
+    
+    // インクリメンタル要約を先に実行（リアルタイム性重視）
+    updateIncrementalSummary(conversation);
 
     try {
       // 過去3会話を取得（最新3件の会話テキスト）
@@ -474,11 +502,13 @@ export default function App() {
           };
           return [newEntry, ...prev.slice(0, 4)];
         });
+        // 詳細要約も更新
+        setLatestSummary(result.summary);
       }
     } catch (e) {
       console.error('Summary error:', e);
     }
-  }, [conversations]);
+  }, [conversations, updateIncrementalSummary]);
 
   // ジャンルを推定
   const updateGenre = useCallback(async (conversation: string) => {
@@ -729,6 +759,9 @@ export default function App() {
     setApiUsage(getTotalApiUsageStats());
     setCurrentGenre(null);
     lastGenreUpdateRef.current = 0;
+    // インクリメンタル要約のリセット
+    setLatestSummary('');
+    lastSummaryUpdateRef.current = 0;
     // Whisperプロンプト関連のリセット（ジャンルキーワードと検出済み固有名詞）
     setGenreKeywords('');
     detectedNounsRef.current = [];
@@ -885,7 +918,7 @@ export default function App() {
           >
             <h2>
               {currentGenre && <span className={`genre-icon genre-${getGenreColorClass(currentGenre.primary)}`}>{getGenreIcon(currentGenre.primary)}</span>}
-              📋 {summaryHistory.length > 0 ? summaryHistory[0].summary.slice(0, 20) : '要約'}
+              📋 {latestSummary || (summaryHistory.length > 0 ? summaryHistory[0].summary.slice(0, 20) : '要約')}
               {expandedSection === 'summary' ? ' ▼' : ' ▶'}
             </h2>
             <div className="section-content">

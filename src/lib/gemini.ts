@@ -409,12 +409,16 @@ export async function explainProperNoun(
 }
 
 // 会話を要約（過去3会話+現在の会話を分析、明瞭度・予想単語・詳細トピックを含む）
+// 会話は最大2000文字に制限（トークン節約）
 export async function summarizeConversation(
   conversation: string,
   previousSummary: string | null,
   recentConversations?: string[], // 過去3会話のテキスト
 ): Promise<ConversationSummary> {
   console.log('[Gemini] summarizeConversation called, conversation length:', conversation.length);
+  
+  // 会話を2000文字に制限（トークン節約）
+  const limitedConversation = conversation.slice(-2000);
   
   // 過去3会話のコンテキストを構築
   const recentContext = recentConversations && recentConversations.length > 0
@@ -427,10 +431,10 @@ ${recentConversations.map((c, i) => `${i + 1}. "${c.slice(0, 100)}${c.length > 1
   const prompt = previousSummary
     ? `前回の要約: "${previousSummary}"
 
-${recentContext}【現在の会話】: "${conversation}"
+${recentContext}【現在の会話】: "${limitedConversation}"
 
 前回の要約と過去の会話の流れを踏まえて、会話全体を要約してください。`
-    : `${recentContext}【現在の会話】: "${conversation}"
+    : `${recentContext}【現在の会話】: "${limitedConversation}"
 
 この会話を要約してください。`;
 
@@ -492,6 +496,39 @@ JSON形式で回答してください:
     return { summary: '', topics: [], keyPoints: [], context: '', participants: '', purpose: '', clarity: 0.5, detailedTopic: '', predictedWords: [] };
   } catch {
     return { summary: '', topics: [], keyPoints: [], context: '', participants: '', purpose: '', clarity: 0.5, detailedTopic: '', predictedWords: [] };
+  }
+}
+
+// インクリメンタル要約（直近の会話のみを素早く要約）
+// リアルタイム性を重視し、短いプロンプトで高速に処理
+export async function summarizeIncremental(
+  latestText: string,
+  previousSummary: string | null,
+): Promise<string> {
+  // テキストが短すぎる場合はスキップ
+  if (latestText.length < 20) {
+    return previousSummary || '';
+  }
+  
+  // テキストを500文字に制限（高速化）
+  const limitedText = latestText.slice(-500);
+  
+  const prompt = previousSummary
+    ? `前回の要約: "${previousSummary}"
+新しい会話: "${limitedText}"
+
+前回の要約を更新してください。「今何について話しているか」を明確に、20文字以内で答えてください。`
+    : `会話: "${limitedText}"
+
+この会話は「今何について話しているか」を明確に、20文字以内で答えてください。`;
+
+  try {
+    const response = await callGemini(prompt);
+    // レスポンスから要約テキストを抽出（JSONではなくプレーンテキスト）
+    const summary = response.trim().replace(/^"|"$/g, '').slice(0, 30);
+    return summary || previousSummary || '';
+  } catch {
+    return previousSummary || '';
   }
 }
 
@@ -558,19 +595,23 @@ export const GENRE_LIST = [
 export type GenreType = typeof GENRE_LIST[number];
 
 // 会話からジャンルを推定（詳細ジャンル対応: スポーツ→中日ドラゴンズなど）
+// 会話は最大1500文字に制限（トークン節約）
 export async function detectConversationGenre(
   conversation: string,
   previousGenres: string[] | null,
 ): Promise<ConversationGenre> {
+  // 会話を1500文字に制限（トークン節約）
+  const limitedConversation = conversation.slice(-1500);
+  
   const genreListStr = GENRE_LIST.join('、');
   
   const prompt = previousGenres && previousGenres.length > 0
     ? `前回のジャンル推定: ${previousGenres.join('、')}
 
-新しい会話内容: "${conversation}"
+新しい会話内容: "${limitedConversation}"
 
 前回の推定を踏まえて、会話のジャンルを再推定してください。`
-    : `会話内容: "${conversation}"
+    : `会話内容: "${limitedConversation}"
 
 この会話のジャンルを推定してください。`;
 
@@ -678,6 +719,7 @@ JSON形式で回答してください:
 }
 
 // ジャンルコンテキストを含めた会話修正
+// コンテキストは最大1000文字に制限（トークン節約）
 export async function correctConversationWithGenre(
   text: string,
   context: string,
@@ -685,6 +727,9 @@ export async function correctConversationWithGenre(
   
   userHint?: string
 ): Promise<CorrectedConversation> {
+  // コンテキストを1000文字に制限（トークン節約）
+  const limitedContext = context.slice(-1000);
+  
   const genreContext = genre && genre.confidence > 0.5
     ? `
 会話のジャンル: ${genre.primary}
@@ -703,7 +748,7 @@ ${userHint.trim()}
   const prompt = `音声認識で取得した以下のテキストを、前後の文脈から誤認識を修正してください。
 
 テキスト: "${text}"
-前後の文脈: "${context}"
+前後の文脈: "${limitedContext}"
 ${genreContext}${userHintContext}
 
 修正が必要な場合は修正し、不確かな単語には「？」を付けてください。
@@ -728,12 +773,15 @@ JSON形式で回答してください:
 
 
 // 拡張固有名詞検出 - 候補を含む幅広い検出
+// コンテキストは最大1000文字に制限（トークン節約）
 export async function detectProperNounsExtended(
   text: string,
   knowledgeLevel: KnowledgeLevel,
   genre: ConversationGenre | null,
   conversationContext: string,
 ): Promise<ExtendedProperNounResult> {
+  // コンテキストを1000文字に制限（トークン節約）
+  const limitedContext = conversationContext.slice(-1000);
   // 知識レベルに応じた検出基準（「知識として知らないレベル」を設定）
   // 小学生: とにかく何でも調べる
   // 専門家: 本当に専門的な用語のみ
@@ -763,7 +811,7 @@ export async function detectProperNounsExtended(
   const prompt = `以下のテキストから、固有名詞とその候補を抽出してください。
 
 テキスト: "${text}"
-会話の文脈: "${conversationContext}"
+会話の文脈: "${limitedContext}"
 ${genreHints}
 
 【最重要: 知識レベルに応じた抽出】
@@ -817,6 +865,7 @@ JSON形式で回答してください:
 }
 
 // 固有名詞の詳細調査 - 複数の候補を返す
+// コンテキストは最大500文字に制限（トークン節約）
 export async function investigateProperNoun(
   word: string,
   category: string,
@@ -824,6 +873,9 @@ export async function investigateProperNoun(
   genre: ConversationGenre | null,
   knowledgeLevel: KnowledgeLevel,
 ): Promise<Candidate[]> {
+  // コンテキストを500文字に制限（トークン節約）
+  const limitedContext = context.slice(-500);
+  
   const levelPrompt = {
     elementary: '小学生でもわかるように、簡単な言葉で',
     middle: '中学生向けに、基本的な用語を使って',
@@ -839,7 +891,7 @@ export async function investigateProperNoun(
   const prompt = `「${word}」について調査してください。
 
 カテゴリ: ${category}
-文脈: "${context}"
+文脈: "${limitedContext}"
 ${genreHint}
 
 【重要な指示】

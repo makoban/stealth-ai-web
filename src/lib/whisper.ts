@@ -189,7 +189,7 @@ export class AudioRecorder {
   private readonly VAD_ON_MULTIPLIER = 2.5;   // 発話開始閾値 = noiseFloor * 2.5（3.5→2.5）
   private readonly VAD_OFF_MULTIPLIER = 1.5;  // 発話終了閾値 = noiseFloor * 1.5（1.8→1.5）
   private readonly VAD_MAYBE_SPEECH_DURATION = 50;   // maybe_speech → speech (ms)
-  private readonly VAD_MAYBE_SILENCE_DURATION = 200; // maybe_silence → silence (ms)
+  private readonly VAD_MAYBE_SILENCE_DURATION = 120; // maybe_silence → silence (ms)（200→120でより敏感に）
 
   // === AGC（自動ゲイン調整）パラメータ ===
   private agcEnabled: boolean = true;

@@ -53,8 +53,9 @@ function isHallucination(text: string): boolean {
 
 // 定数
 const DEFAULT_GAIN = 50;
-const VAD_SILENCE_DURATION = 200; // 0.2秒無音でWhisper送信
-const MAX_RECORDING_DURATION = 10000; // 10秒で強制送信
+const VAD_SILENCE_DURATION = 150; // 0.15秒無音でWhisper送信（より敏感に）
+const MAX_RECORDING_DURATION = 5000; // 5秒で強制送信（より細かく区切る）
+const MIN_RECORDING_DURATION = 500; // 0.5秒未満の音声は送信しない（ノイズ対策）
 
 export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}) {
   const {
@@ -122,6 +123,13 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       return;
     }
 
+    // 最小録音時間チェック（ノイズ対策）
+    const elapsed = Date.now() - recordingStartTimeRef.current;
+    if (elapsed < MIN_RECORDING_DURATION && reason === 'VAD') {
+      log('WHISPER', `Skipping (${reason}) - too short: ${elapsed}ms < ${MIN_RECORDING_DURATION}ms`);
+      return;
+    }
+
     const blob = recorderRef.current.getIntermediateBlob();
     
     if (!blob || blob.size < 1000) {
@@ -129,7 +137,7 @@ export function useWhisperRecognition(options: UseWhisperRecognitionOptions = {}
       return;
     }
 
-    log('WHISPER', `Sending (${reason}): ${blob.size} bytes`);
+    log('WHISPER', `Sending (${reason}): ${blob.size} bytes, duration: ${elapsed}ms`);
     isProcessingRef.current = true;
     setProcessingStatus('Whisper送信中...');
     
