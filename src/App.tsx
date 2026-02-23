@@ -33,7 +33,7 @@ import './App.css';
 
 
 
-const APP_VERSION = 'v3.38.0';
+const APP_VERSION = 'v3.39.0';
 
 const APP_NAME = 'KUROKO +';
 

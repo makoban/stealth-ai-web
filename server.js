@@ -884,6 +884,15 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   
+  console.log('[Stripe Webhook] Received webhook request:', {
+    hasStripeKey: !!stripeSecretKey,
+    hasWebhookSecret: !!webhookSecret,
+    hasSignature: !!req.headers['stripe-signature'],
+    bodyIsBuffer: Buffer.isBuffer(req.body),
+    bodyLength: req.body ? req.body.length : 0,
+    contentType: req.headers['content-type'],
+  });
+  
   if (!stripeSecretKey) {
     console.error('[Stripe Webhook] STRIPE_SECRET_KEY not configured');
     return res.status(500).json({ error: 'Stripe not configured' });
@@ -896,14 +905,26 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   
   try {
     if (webhookSecret) {
+      // STRIPE_WEBHOOK_SECRET が設定されている場合は署名検証
       event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+      console.log('[Stripe Webhook] Signature verified successfully');
     } else {
-      // Webhookシークレットがない場合は直接パース（テスト用）
+      // STRIPE_WEBHOOK_SECRET が未設定の場合は署名検証をスキップ（テスト環境用）
+      console.warn('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not configured - skipping signature verification');
+      if (!req.body || req.body.length === 0) {
+        console.error('[Stripe Webhook] Empty request body');
+        return res.status(400).send('Webhook Error: Empty request body');
+      }
       event = JSON.parse(req.body.toString());
     }
   } catch (err) {
-    console.error('[Stripe Webhook] Signature verification failed:', err.message);
-    return res.status(400).json({ error: 'Webhook signature verification failed' });
+    console.error('[Stripe Webhook] Event construction failed:', {
+      message: err.message,
+      type: err.type || 'unknown',
+      hasSignature: !!sig,
+      hasWebhookSecret: !!webhookSecret,
+    });
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
   
   // 決済完了イベントを処理
