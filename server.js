@@ -572,6 +572,7 @@ app.post('/api/whisper', upload.single('file'), checkUserAuth, async (req, res) 
 app.post('/api/gemini', checkUserAuth, async (req, res) => {
   const startTime = Date.now();
   const apiKey = process.env.GEMINI_API_KEY;
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-flash-latest';
   
   if (!apiKey) {
     console.error('[Proxy] Gemini API key not configured');
@@ -597,7 +598,7 @@ app.post('/api/gemini', checkUserAuth, async (req, res) => {
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
