@@ -572,7 +572,10 @@ app.post('/api/whisper', upload.single('file'), checkUserAuth, async (req, res) 
 app.post('/api/gemini', checkUserAuth, async (req, res) => {
   const startTime = Date.now();
   const apiKey = process.env.GEMINI_API_KEY;
-  const geminiModel = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  const configuredGeminiModel = (process.env.GEMINI_MODEL || '').trim();
+  const geminiModel = !configuredGeminiModel || configuredGeminiModel === 'gemini-flash-latest'
+    ? 'gemini-2.5-flash'
+    : configuredGeminiModel;
   
   if (!apiKey) {
     console.error('[Proxy] Gemini API key not configured');
